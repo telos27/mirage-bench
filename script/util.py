@@ -229,6 +229,8 @@ def get_verifier(
     model_name: Optional[str] = None,
     model_temperature: Optional[float] = None,
     result_field_name: Optional[str] = None,
+    use_logic_verifier: bool = False,
+    use_souffle_verifier: bool = False,
 ):
 
     common_kwargs = dict(
@@ -236,6 +238,8 @@ def get_verifier(
         model_name=model_name,
         model_temperature=model_temperature,
         result_field_name=result_field_name,
+        use_logic_verifier=use_logic_verifier,
+        use_souffle_verifier=use_souffle_verifier,
     )
     if type == "unexpected_transition":
         if scenario == "theagentcompany":
@@ -289,9 +293,13 @@ def get_verifier(
 
     elif type == "repetitive_4" or type == "repetitive_7":
         if scenario == "webarena" or scenario == "workarena":
-            # Check if logic-based verifier is requested
+            # Check which verifier is requested
             use_logic = common_kwargs.pop("use_logic_verifier", False)
-            if use_logic:
+            use_souffle = common_kwargs.pop("use_souffle_verifier", False)
+            if use_souffle:
+                from verifier import SouffleVerifyRepetitive
+                verifier = SouffleVerifyRepetitive(logger, **common_kwargs)
+            elif use_logic:
                 from verifier import LogicVerifyRepetitive
                 verifier = LogicVerifyRepetitive(logger, **common_kwargs)
             else:

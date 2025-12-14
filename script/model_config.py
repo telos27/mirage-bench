@@ -297,8 +297,11 @@ def get_client(model_name: str) -> Union[OpenAI, openai.AzureOpenAI]:
         base_url = model_config.get("base_url")
 
         client_args = {}
-        client_args["base_url"] = base_url.strip()
-        print(f"Model {model_name} using API base URL: {base_url}")
+        if base_url:
+            client_args["base_url"] = base_url.strip()
+            print(f"Model {model_name} using API base URL: {base_url}")
+        else:
+            print(f"Model {model_name} using default OpenAI API endpoint")
 
         # Create client
         return OpenAI(api_key=api_key, **client_args)

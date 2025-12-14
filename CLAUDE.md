@@ -38,6 +38,9 @@ python3 script/verifier.py --type <type> --scenario <scenario> --model <model>
 # Run verification with logic-based verifier (FREE - no API calls)
 python3 script/verifier.py --type <type> --scenario <scenario> --model <model> --use-logic-verifier
 
+# Run verification with Soufflé Datalog verifier (FREE - no API calls)
+python3 script/verifier.py --type <type> --scenario <scenario> --model <model> --use-souffle-verifier
+
 # Run tests (FREE - no API calls)
 python3 script/test_logic_verifier.py --test-scenarios
 ```
@@ -46,6 +49,7 @@ python3 script/test_logic_verifier.py --test-scenarios
 
 These operations do NOT use LLM APIs:
 - `--use-logic-verifier` flag for repetitive_4/repetitive_7 verification
+- `--use-souffle-verifier` flag for repetitive_4/repetitive_7 verification (requires Soufflé installed)
 - `test_logic_verifier.py` - Unit tests for logic verifier
 - `analyze_repetitive_patterns.py` - Pattern analysis
 - Reading/analyzing dataset files

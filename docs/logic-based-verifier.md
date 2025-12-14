@@ -144,3 +144,136 @@ class LogicVerifyRepetitive(BaseVerifier):
         # Add new regex patterns here
     ]
 ```
+
+---
+
+# Soufflé Datalog Verifier
+
+An alternative logic-based verifier using the Soufflé Datalog engine for declarative verification.
+
+## Overview
+
+The Soufflé verifier provides a declarative approach to repetitive action detection using Datalog rules. It produces identical results to the Python logic verifier but uses a formal logic programming paradigm.
+
+### Advantages
+
+- **Declarative** - Rules are expressed as logical facts and relations
+- **Formal semantics** - Based on Datalog with clear mathematical foundations
+- **Extensible** - Easy to add new rules without changing Python code
+- **No API costs** - Runs entirely locally
+
+### Requirements
+
+Soufflé must be installed:
+```bash
+# Ubuntu/Debian
+apt-get install souffle
+
+# macOS
+brew install souffle
+```
+
+## Usage
+
+### Command Line
+
+```bash
+python3 script/verifier.py --type repetitive_4 --scenario webarena \
+  --model gpt-4o-mini-2024-07-18 --use-souffle-verifier
+```
+
+### Direct Usage
+
+```python
+from verifier import SouffleVerifyRepetitive
+
+verifier = SouffleVerifyRepetitive(logger=logger)
+verifier.load_inference_results(results_path, scenario)
+verifier.set_output_dir(output_dir)
+results = verifier()
+```
+
+### Via get_verifier Factory
+
+```python
+from util import get_verifier
+
+verifier = get_verifier(
+    type="repetitive_4",
+    scenario="webarena",
+    logger=logger,
+    use_souffle_verifier=True
+)
+```
+
+## How It Works
+
+The Soufflé program (`souffle_repetitive.dl`) defines:
+
+### Input Relations
+```prolog
+.decl input_action(case_id: symbol, action: symbol)
+.decl input_repetitive_action(case_id: symbol, action: symbol)
+.decl thinking_token(case_id: symbol, token: symbol)
+```
+
+### Awareness Keywords (as facts)
+```prolog
+awareness_keyword("tried").
+awareness_keyword("failed").
+awareness_keyword("different").
+awareness_keyword("alternative").
+// ... 50+ keywords
+```
+
+### Scoring Rules
+```prolog
+// Action matches check
+action_matches(id) :-
+    input_action(id, action),
+    input_repetitive_action(id, rep_action),
+    action = rep_action.
+
+// Awareness detection
+has_awareness(id) :-
+    thinking_token(id, token),
+    awareness_keyword(token).
+
+// Scoring
+score_thinking(id, 0) :- action_matches(id).
+score_thinking(id, 1) :- !action_matches(id), !has_awareness(id).
+score_thinking(id, 2) :- !action_matches(id), has_awareness(id).
+```
+
+## Output Format
+
+```json
+{
+  "verified_result": {
+    "thinking_eval": 0,
+    "action_eval": 0,
+    "thinking_eval_reason": "Action matches repetitive action",
+    "verifier_type": "souffle",
+    "awareness_keywords": [],
+    "action_matches": true
+  }
+}
+```
+
+## Comparison of Verifiers
+
+| Verifier | Flag | Cost | Speed | Approach |
+|----------|------|------|-------|----------|
+| LLM-based | (default) | $$$ | Slow | GPT-4/Claude as judge |
+| Logic-based | `--use-logic-verifier` | Free | Fast | Python keyword matching |
+| Soufflé | `--use-souffle-verifier` | Free | Fast | Datalog rules |
+
+## Extending
+
+To add new keywords, edit `souffle_repetitive.dl`:
+
+```prolog
+// Add new awareness keywords
+awareness_keyword("new_keyword").
+awareness_keyword("another_keyword").
+```

@@ -104,6 +104,12 @@ def main():
         help="Use logic-based verifier instead of LLM-based (for repetitive_4/repetitive_7 only)",
     )
 
+    parser.add_argument(
+        "--use-souffle-verifier",
+        action="store_true",
+        help="Use Souffle Datalog-based verifier (for repetitive_4/repetitive_7 only)",
+    )
+
     args = parser.parse_args()
 
     inference_results_dir = Path("../inferenced_results")
@@ -128,6 +134,7 @@ def main():
         model_temperature=args.verifier_temperature,
         result_field_name=args.result_field_name,
         use_logic_verifier=args.use_logic_verifier,
+        use_souffle_verifier=args.use_souffle_verifier,
     )
 
     # Load inference results and run verification

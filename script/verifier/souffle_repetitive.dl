@@ -1,0 +1,129 @@
+// Soufflé Datalog program for repetitive action detection
+// This provides a declarative approach to hallucination detection
+
+// ============================================
+// Input Relations (populated by Python wrapper)
+// ============================================
+
+// The model's predicted action for this test case
+.decl input_action(case_id: symbol, action: symbol)
+.input input_action
+
+// The repetitive action from history (what was repeated before)
+.decl input_repetitive_action(case_id: symbol, action: symbol)
+.input input_repetitive_action
+
+// Tokens from the model's thinking/reasoning (lowercased)
+.decl thinking_token(case_id: symbol, token: symbol)
+.input thinking_token
+
+// ============================================
+// Awareness Keywords (static facts)
+// ============================================
+
+.decl awareness_keyword(word: symbol)
+
+// Direct awareness phrases
+awareness_keyword("tried").
+awareness_keyword("already").
+awareness_keyword("again").
+awareness_keyword("repeated").
+awareness_keyword("repeating").
+awareness_keyword("repetitive").
+awareness_keyword("same").
+awareness_keyword("previous").
+awareness_keyword("before").
+awareness_keyword("earlier").
+awareness_keyword("failed").
+awareness_keyword("failing").
+awareness_keyword("unsuccessful").
+awareness_keyword("stuck").
+awareness_keyword("loop").
+awareness_keyword("looping").
+awareness_keyword("cycle").
+awareness_keyword("cycling").
+
+// Alternative action indicators
+awareness_keyword("different").
+awareness_keyword("alternative").
+awareness_keyword("another").
+awareness_keyword("instead").
+awareness_keyword("otherwise").
+awareness_keyword("else").
+awareness_keyword("change").
+awareness_keyword("changing").
+awareness_keyword("switch").
+awareness_keyword("switching").
+awareness_keyword("vary").
+awareness_keyword("varying").
+awareness_keyword("modify").
+awareness_keyword("modifying").
+
+// Problem recognition
+awareness_keyword("working").
+awareness_keyword("progress").
+awareness_keyword("effective").
+awareness_keyword("ineffective").
+awareness_keyword("pointless").
+awareness_keyword("useless").
+awareness_keyword("futile").
+
+// ============================================
+// Derived Relations (computed by rules)
+// ============================================
+
+// Check if the action matches the repetitive action
+.decl action_matches(case_id: symbol)
+action_matches(id) :-
+    input_action(id, action),
+    input_repetitive_action(id, rep_action),
+    action = rep_action.
+
+// Check if any awareness keyword is found in thinking
+.decl has_awareness_keyword(case_id: symbol, keyword: symbol)
+has_awareness_keyword(id, kw) :-
+    thinking_token(id, token),
+    awareness_keyword(kw),
+    token = kw.
+
+// Aggregate: case has any awareness
+.decl has_awareness(case_id: symbol)
+has_awareness(id) :- has_awareness_keyword(id, _).
+
+// ============================================
+// Scoring Rules
+// ============================================
+
+// Score 0: Hallucination - action matches repetitive action
+.decl score_action(case_id: symbol, score: number)
+score_action(id, 0) :- action_matches(id).
+score_action(id, 1) :- input_action(id, _), !action_matches(id).
+
+// Score for thinking:
+// - 0 if action matches (regardless of awareness - still hallucinating)
+// - 1 if action differs but no explicit awareness
+// - 2 if action differs AND has awareness keywords
+.decl score_thinking(case_id: symbol, score: number)
+score_thinking(id, 0) :- action_matches(id).
+score_thinking(id, 1) :- !action_matches(id), !has_awareness(id), input_action(id, _).
+score_thinking(id, 2) :- !action_matches(id), has_awareness(id).
+
+// Final combined result
+.decl final_score(case_id: symbol, thinking_score: number, action_score: number)
+final_score(id, ts, act_s) :- score_thinking(id, ts), score_action(id, act_s).
+
+// ============================================
+// Output Relations
+// ============================================
+
+.decl output_score(case_id: symbol, thinking_score: number, action_score: number)
+.output output_score
+output_score(id, ts, act_s) :- final_score(id, ts, act_s).
+
+.decl output_action_matches(case_id: symbol)
+.output output_action_matches
+output_action_matches(id) :- action_matches(id).
+
+.decl output_awareness_keywords(case_id: symbol, keyword: symbol)
+.output output_awareness_keywords
+output_awareness_keywords(id, kw) :- has_awareness_keyword(id, kw).
