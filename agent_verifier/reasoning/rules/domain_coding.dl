@@ -1,0 +1,148 @@
+// Domain: Coding Best Practices (Layer 2)
+//
+// Rules for code generation, review, and assistance:
+// - Security: Prevent dangerous patterns, injection vulnerabilities
+// - Quality: Error handling, validation, documentation
+// - Style: Consistent patterns, best practices
+//
+
+// ============================================
+// Input Relations (populated by fact extractor)
+// ============================================
+
+// Active domain for this case
+.decl active_domain(case_id: symbol, domain: symbol)
+.input active_domain
+
+// Code patterns detected
+// pattern_type: eval_usage, exec_usage, subprocess_shell, os_system,
+//               shell_true, pickle_load, dynamic_import, hardcoded_secret
+// category: dangerous, security, quality
+.decl code_pattern(case_id: symbol, pattern_type: symbol, category: symbol)
+.input code_pattern
+
+// Whether code has error handling
+.decl code_has_error_handling(case_id: symbol, has_handling: symbol)
+.input code_has_error_handling
+
+// Whether code has input validation
+.decl code_has_validation(case_id: symbol, has_validation: symbol)
+.input code_has_validation
+
+// Output references and context elements (from Layer 1)
+.decl output_reference(case_id: symbol, reference: symbol)
+.input output_reference
+
+.decl context_element(case_id: symbol, element: symbol)
+.input context_element
+
+.decl output_action(case_id: symbol, action: symbol)
+.input output_action
+
+// ============================================
+// Helper: Check if coding domain is active
+// ============================================
+
+.decl is_coding_case(case_id: symbol)
+is_coding_case(id) :- active_domain(id, "coding").
+
+// ============================================
+// Violation: Dangerous Function Usage
+// ============================================
+
+// Direct dangerous function usage
+.decl dangerous_function(case_id: symbol, function_name: symbol)
+
+dangerous_function(id, "eval()") :-
+    is_coding_case(id),
+    code_pattern(id, "eval_usage", _).
+
+dangerous_function(id, "exec()") :-
+    is_coding_case(id),
+    code_pattern(id, "exec_usage", _).
+
+dangerous_function(id, "os.system()") :-
+    is_coding_case(id),
+    code_pattern(id, "os_system", _).
+
+dangerous_function(id, "subprocess with shell=True") :-
+    is_coding_case(id),
+    code_pattern(id, "shell_true", _).
+
+dangerous_function(id, "pickle.load()") :-
+    is_coding_case(id),
+    code_pattern(id, "pickle_load", _).
+
+dangerous_function(id, "__import__()") :-
+    is_coding_case(id),
+    code_pattern(id, "dynamic_import", _).
+
+// ============================================
+// Violation: Hardcoded Secrets
+// ============================================
+
+.decl hardcoded_secret(case_id: symbol)
+hardcoded_secret(id) :-
+    is_coding_case(id),
+    code_pattern(id, "hardcoded_secret", _).
+
+// ============================================
+// Violation: Missing Error Handling
+// ============================================
+
+// Only flag if the code is substantial (has actions)
+.decl missing_error_handling(case_id: symbol)
+missing_error_handling(id) :-
+    is_coding_case(id),
+    code_has_error_handling(id, "false"),
+    output_action(id, _).
+
+// ============================================
+// Violation: Missing Input Validation
+// ============================================
+
+// Flag when user input handling is implied but no validation present
+.decl missing_input_validation(case_id: symbol)
+missing_input_validation(id) :-
+    is_coding_case(id),
+    code_has_validation(id, "false"),
+    (output_reference(id, "user input") ;
+     output_reference(id, "user_input") ;
+     output_reference(id, "request") ;
+     output_reference(id, "form") ;
+     output_reference(id, "query")).
+
+// ============================================
+// Violation Aggregation
+// ============================================
+
+.decl has_coding_violation(case_id: symbol, vtype: symbol)
+has_coding_violation(id, "dangerous_function") :- dangerous_function(id, _).
+has_coding_violation(id, "hardcoded_secret") :- hardcoded_secret(id).
+has_coding_violation(id, "missing_error_handling") :- missing_error_handling(id).
+has_coding_violation(id, "missing_input_validation") :- missing_input_validation(id).
+
+// ============================================
+// Output Relations
+// ============================================
+
+// Domain violations output
+// Format: (case_id, domain, violation_type, detail, severity)
+.decl output_domain_violation(case_id: symbol, domain: symbol, vtype: symbol, detail: symbol, severity: symbol)
+.output output_domain_violation
+
+// Dangerous function violations (ERROR severity)
+output_domain_violation(id, "coding", "dangerous_function", func, "error") :-
+    dangerous_function(id, func).
+
+// Hardcoded secret violations (ERROR severity)
+output_domain_violation(id, "coding", "hardcoded_secret", "Potential hardcoded credential detected", "error") :-
+    hardcoded_secret(id).
+
+// Missing error handling (WARNING severity)
+output_domain_violation(id, "coding", "missing_error_handling", "Code lacks error handling (try/except)", "warning") :-
+    missing_error_handling(id).
+
+// Missing input validation (WARNING severity)
+output_domain_violation(id, "coding", "missing_input_validation", "User input handling without validation", "warning") :-
+    missing_input_validation(id).

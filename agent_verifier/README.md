@@ -26,10 +26,12 @@ from agent_verifier import (
     VerificationRequest,
     CommonKnowledgeLayer,
 )
+from agent_verifier.layers import DomainBestPracticesLayer
 
-# Create engine with Layer 1
-engine = VerificationEngine(EngineConfig(enabled_layers=[1]))
+# Create engine with Layers 1 and 2
+engine = VerificationEngine(EngineConfig(enabled_layers=[1, 2]))
 engine.register_layer(CommonKnowledgeLayer())
+engine.register_layer(DomainBestPracticesLayer(domains=["coding"]))
 
 # Verify an LLM output
 request = VerificationRequest(
@@ -77,6 +79,40 @@ custom_violation(id, msg) :-
     msg = "Custom violation detected".
 """)
 ```
+
+### DomainBestPracticesLayer (Layer 2)
+Checks domain-specific rules and best practices:
+
+**Supported Domains:**
+- `coding` - Security, error handling, code quality
+- `customer_service` - Professional tone, policy compliance
+- `data_analysis` - Source citation, methodology
+- `content_generation` - Accuracy, appropriateness
+- `general` - Common agent behavior patterns
+
+```python
+from agent_verifier.layers import DomainBestPracticesLayer
+
+# Create with specific domains
+layer = DomainBestPracticesLayer(domains=["coding", "customer_service"])
+
+# Domain is auto-detected from request content
+# Or manually activate/deactivate domains
+layer.activate_domain("data_analysis")
+layer.deactivate_domain("customer_service")
+
+# Add domain-specific rules dynamically
+layer.add_extracted_rule("coding", """
+custom_code_violation(id) :- bad_pattern(id).
+""")
+```
+
+**Coding Domain Checks:**
+- Dangerous functions (eval, exec, os.system)
+- Hardcoded secrets (passwords, API keys)
+- SQL injection vulnerabilities
+- Missing error handling
+- Missing input validation
 
 ### Fact Extractors
 Extract structured facts from agent inputs and outputs.
@@ -183,11 +219,18 @@ agent_verifier/
 │   └── prompt_constraints.py # Prompt constraint extraction
 ├── layers/
 │   ├── base_layer.py        # Abstract BaseLayer
-│   └── layer1_common.py     # CommonKnowledgeLayer
+│   ├── layer1_common.py     # CommonKnowledgeLayer
+│   └── layer2_domain.py     # DomainBestPracticesLayer
 ├── reasoning/
 │   ├── datalog_engine.py    # Soufflé wrapper
 │   └── rules/
-│       └── common_knowledge.dl
+│       ├── common_knowledge.dl  # Layer 1 rules
+│       └── domain_coding.dl     # Coding domain rules
+├── rule_extraction/
+│   ├── schemas.py           # NaturalRule, CompiledRule
+│   ├── extractor.py         # LLM-based rule extraction
+│   ├── validator.py         # Rule validation
+│   └── compiler.py          # Datalog compiler
 ├── schemas/
 │   ├── request.py           # VerificationRequest
 │   ├── result.py            # VerificationResult, Violation
@@ -226,7 +269,7 @@ python3 -m pytest agent_verifier/tests/ -v
 
 ## Implementation Status
 
-- [x] Phase 1: Foundation (Sessions 1-3)
+- [x] Phase 1: Foundation (Sessions 1-3.5)
   - [x] Core schemas
   - [x] SQLite storage
   - [x] DatalogEngine
@@ -234,11 +277,10 @@ python3 -m pytest agent_verifier/tests/ -v
   - [x] Layer 1 (Common Knowledge)
   - [x] Heuristic fact extractors (input, output)
   - [x] Prompt constraint extractor
+  - [x] LLM rule extraction tool
   - [x] End-to-end integration tests
-- [ ] Phase 1: Continued (Session 3.5)
-  - [ ] LLM rule extraction tool
-- [ ] Phase 2: Configuration Layers (Sessions 4-6)
-  - [ ] Layer 2: Domain Practices
+- [x] Phase 2: Configuration Layers (Sessions 4-6) - In Progress
+  - [x] Layer 2: Domain Best Practices (coding, customer_service, data_analysis, etc.)
   - [ ] Layer 3: Business Policies
   - [ ] Layer 4: User Preferences
 - [ ] Phase 3: Runtime Layers (Sessions 7-9)
