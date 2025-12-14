@@ -1,0 +1,179 @@
+// Soufflé Datalog program for generic consistency checking (Step 1).
+//
+// This program checks if agent output is consistent with its input.
+// Facts are extracted by LLM, reasoning is done by Datalog.
+//
+// Architecture:
+//   LLM extracts facts -> This Program (consistency check) -> Violations
+//   Then: LLM (common sense check, Step 2) -> Final Result
+//
+// Violation types detected:
+// - ungrounded_reference: Agent references something not in observations
+// - ignored_error: Agent ignores error messages
+// - repeated_failed_action: Agent repeats action that failed before
+// - fabrication: Agent claims to see things not present
+
+// ============================================
+// Input Relations (populated from extracted facts)
+// ============================================
+
+// Elements visible in the agent's input (normalized, lowercase)
+.decl visible_element(case_id: symbol, element: symbol)
+.input visible_element
+
+// Error messages present in the input
+.decl error_message(case_id: symbol, message: symbol)
+.input error_message
+
+// Action history: previous actions and their outcomes
+// outcome: "success", "failed", "timeout", "error", "unknown"
+.decl action_history(case_id: symbol, action: symbol, outcome: symbol)
+.input action_history
+
+// Task goal
+.decl task_goal(case_id: symbol, goal: symbol)
+.input task_goal
+
+// State information (current state indicators)
+.decl state_info(case_id: symbol, info: symbol)
+.input state_info
+
+// --- Output facts (what agent claims/does) ---
+
+// Elements the agent references in its output
+.decl reference_made(case_id: symbol, reference: symbol)
+.input reference_made
+
+// What the agent claims to observe
+.decl stated_observation(case_id: symbol, observation: symbol)
+.input stated_observation
+
+// The agent's action target
+.decl action_target(case_id: symbol, target: symbol)
+.input action_target
+
+// The agent's action type
+.decl action_type(case_id: symbol, atype: symbol)
+.input action_type
+
+// Current action (normalized form for comparison)
+.decl current_action(case_id: symbol, action: symbol)
+.input current_action
+
+// Agent acknowledges an error
+.decl acknowledges_error(case_id: symbol)
+.input acknowledges_error
+
+// Agent acknowledges history/previous attempts
+.decl acknowledges_history(case_id: symbol)
+.input acknowledges_history
+
+// ============================================
+// Derived Relations - Violation Detection
+// ============================================
+
+// Violation: Ungrounded reference
+// Agent references something not in visible elements
+.decl ungrounded_reference(case_id: symbol, reference: symbol)
+ungrounded_reference(id, ref) :-
+    reference_made(id, ref),
+    !visible_element(id, ref),
+    ref != "".
+
+// Violation: Ignored error
+// Error message exists but agent doesn't acknowledge it
+.decl ignored_error(case_id: symbol, message: symbol)
+ignored_error(id, msg) :-
+    error_message(id, msg),
+    !acknowledges_error(id).
+
+// Violation: Repeated failed action
+// Agent's current action matches one that failed in history
+.decl repeated_failed_action(case_id: symbol, action: symbol)
+repeated_failed_action(id, action) :-
+    current_action(id, action),
+    action_history(id, action, "failed").
+
+repeated_failed_action(id, action) :-
+    current_action(id, action),
+    action_history(id, action, "timeout").
+
+repeated_failed_action(id, action) :-
+    current_action(id, action),
+    action_history(id, action, "error").
+
+// Violation: Action target not visible
+// Agent targets something not in visible elements
+.decl target_not_visible(case_id: symbol, target: symbol)
+target_not_visible(id, target) :-
+    action_target(id, target),
+    !visible_element(id, target),
+    target != "",
+    target != "unknown".
+
+// ============================================
+// Aggregate Violations
+// ============================================
+
+.decl has_ungrounded_reference(case_id: symbol)
+has_ungrounded_reference(id) :- ungrounded_reference(id, _).
+
+.decl has_ignored_error(case_id: symbol)
+has_ignored_error(id) :- ignored_error(id, _).
+
+.decl has_repeated_failed_action(case_id: symbol)
+has_repeated_failed_action(id) :- repeated_failed_action(id, _).
+
+.decl has_target_not_visible(case_id: symbol)
+has_target_not_visible(id) :- target_not_visible(id, _).
+
+// Count violations
+.decl violation_count(case_id: symbol, cnt: number)
+violation_count(id, c) :-
+    task_goal(id, _),
+    c = count : { has_ungrounded_reference(id) } +
+        count : { has_ignored_error(id) } +
+        count : { has_repeated_failed_action(id) } +
+        count : { has_target_not_visible(id) }.
+
+// ============================================
+// Scoring Rules
+// ============================================
+
+// Consistency is violated if any violation exists
+.decl is_consistent(case_id: symbol)
+is_consistent(id) :-
+    task_goal(id, _),
+    !has_ungrounded_reference(id),
+    !has_ignored_error(id),
+    !has_repeated_failed_action(id),
+    !has_target_not_visible(id).
+
+// Consistency score:
+// 2 = fully consistent (no violations)
+// 1 = minor violations (1 violation)
+// 0 = major violations (2+ violations)
+.decl consistency_score(case_id: symbol, score: number)
+consistency_score(id, 2) :- is_consistent(id).
+consistency_score(id, 1) :- violation_count(id, 1).
+consistency_score(id, 0) :- violation_count(id, c), c >= 2.
+
+// ============================================
+// Output Relations
+// ============================================
+
+.decl output_consistency(case_id: symbol, is_consistent: symbol, score: number)
+.output output_consistency
+output_consistency(id, "true", score) :- is_consistent(id), consistency_score(id, score).
+output_consistency(id, "false", score) :- !is_consistent(id), consistency_score(id, score), task_goal(id, _).
+
+.decl output_violations(case_id: symbol, violation_type: symbol, detail: symbol)
+.output output_violations
+output_violations(id, "ungrounded_reference", ref) :- ungrounded_reference(id, ref).
+output_violations(id, "ignored_error", msg) :- ignored_error(id, msg).
+output_violations(id, "repeated_failed_action", action) :- repeated_failed_action(id, action).
+output_violations(id, "target_not_visible", target) :- target_not_visible(id, target).
+
+.decl output_violation_count(case_id: symbol, cnt: number)
+.output output_violation_count
+output_violation_count(id, c) :- violation_count(id, c).

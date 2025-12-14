@@ -122,6 +122,12 @@ def main():
         help="Use Generic hallucination verifier: type-agnostic detection using common sense (works with any type)",
     )
 
+    parser.add_argument(
+        "--use-souffle-generic-verifier",
+        action="store_true",
+        help="Use hybrid Soufflé+LLM generic verifier: Soufflé for consistency (FREE), LLM for common sense",
+    )
+
     args = parser.parse_args()
 
     inference_results_dir = Path("../inferenced_results")
@@ -149,6 +155,7 @@ def main():
         use_souffle_verifier=args.use_souffle_verifier,
         use_neurosymbolic_verifier=args.use_neurosymbolic_verifier,
         use_generic_verifier=args.use_generic_verifier,
+        use_souffle_generic_verifier=args.use_souffle_generic_verifier,
     )
 
     # Load inference results and run verification

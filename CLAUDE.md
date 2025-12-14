@@ -1,5 +1,15 @@
 # CLAUDE.md - Guidelines for AI Assistants
 
+## Session Notes
+
+**At the end of each session, save a session note to `session_notes/YYYY-MM-DD.md`.**
+
+Include:
+- What was worked on
+- Current state / progress
+- Next steps
+- Any open questions or blockers
+
 ## IMPORTANT: LLM API Cost Warning
 
 **ALWAYS estimate LLM API costs and get explicit user permission before running any command that uses cloud LLM APIs.**
@@ -49,6 +59,10 @@ python3 script/verifier.py --type <type> --scenario <scenario> --model <model> -
 # Type-agnostic hallucination detection using LLM common sense
 python3 script/verifier.py --type <type> --scenario <scenario> --model <model> --use-generic-verifier
 
+# Run verification with Soufflé-based Generic verifier (REQUIRES API KEY - reduced cost)
+# Hybrid: Heuristic input extraction (FREE) + Soufflé consistency (FREE) + LLM common sense
+python3 script/verifier.py --type <type> --scenario <scenario> --model <model> --use-souffle-generic-verifier
+
 # Run tests (FREE - no API calls)
 python3 script/test_logic_verifier.py --test-scenarios
 python3 script/test_generic_verifier.py  # Tests for generic verifier (mocked LLM)
@@ -74,6 +88,7 @@ These operations do NOT use LLM APIs:
 | Soufflé | ❌ Keywords only | ✅ Datalog rules | Free | `--use-souffle-verifier` |
 | Neuro-Symbolic | ✅ LLM extraction | ✅ Datalog rules | Medium | `--use-neurosymbolic-verifier` |
 | Generic | ✅ Common sense | ✅ Violation-based | Medium | `--use-generic-verifier` |
+| Soufflé-Generic | ✅ Hybrid | ✅ Datalog + LLM | Low | `--use-souffle-generic-verifier` |
 
 ### Generic Hallucination Verifier (NEW)
 
@@ -109,6 +124,36 @@ Key files:
 - `script/verifier/generic_schema.py` - Generic fact schema
 - `script/verifier/generic_verifier.py` - Common sense verifier
 - `docs/generic-hallucination-detector.md` - Full documentation
+
+### Soufflé-Generic Verifier (Hybrid)
+
+Combines heuristic extraction, Datalog rules, and LLM for cost-effective verification:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Heuristic     │     │      LLM        │     │    Soufflé      │
+│   (Input)       │     │   (Output)      │     │   (Consistency) │
+│   FREE          │     │   $$$           │     │   FREE          │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         └───────────┬───────────┴───────────────────────┘
+                     │
+                     ▼
+              ┌─────────────────┐
+              │  Common Sense   │
+              │  (LLM)          │
+              └─────────────────┘
+```
+
+**Key optimizations:**
+- Input facts: Heuristic parsing of AXTree (FREE, extracts 78+ elements vs 10 from LLM)
+- Consistency check: Soufflé Datalog rules (FREE, transparent)
+- Output facts + Common sense: LLM (semantic understanding needed)
+
+Key files:
+- `script/verifier/heuristic_fact_extractor.py` - Rule-based input extraction
+- `script/verifier/souffle_generic_verifier.py` - Hybrid verifier
+- `script/verifier/generic_consistency.dl` - Datalog consistency rules
 
 ### Neuro-Symbolic Verifier Architecture
 

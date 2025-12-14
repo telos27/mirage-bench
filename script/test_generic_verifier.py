@@ -20,6 +20,15 @@ from verifier.generic_schema import (
     derive_emergent_type,
 )
 from verifier.generic_verifier import GenericHallucinationVerifier
+from verifier.generic_fact_extractor import (
+    GenericFactExtractor,
+    ExtractedInputFacts,
+    ExtractedOutputFacts,
+    ExtractionResult,
+    ConsistencyResult,
+    ConsistencyViolation,
+    check_consistency,
+)
 
 
 class TestGenericSchema(unittest.TestCase):
@@ -387,6 +396,262 @@ class TestCommonSenseScenarios(unittest.TestCase):
 
             self.assertFalse(evaluation.is_reasonable)
             self.assertEqual(evaluation.violations[0].type, ViolationType.REASONING_MISMATCH)
+
+
+class TestFactExtractor(unittest.TestCase):
+    """Test the GenericFactExtractor class."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.logger = logging.getLogger("test")
+        self.logger.setLevel(logging.WARNING)
+
+    def test_extracted_input_facts_model(self):
+        """Test ExtractedInputFacts model."""
+        facts = ExtractedInputFacts(
+            task_goal="Submit the form",
+            visible_elements=["Submit button", "Cancel button"],
+            error_messages=["Error: Invalid email"],
+            state_info=["Form page"],
+            action_history=["Typed email"],
+            important_facts=["Email validation failed"],
+        )
+        self.assertEqual(facts.task_goal, "Submit the form")
+        self.assertEqual(len(facts.visible_elements), 2)
+        self.assertEqual(len(facts.error_messages), 1)
+
+    def test_extracted_output_facts_model(self):
+        """Test ExtractedOutputFacts model."""
+        facts = ExtractedOutputFacts(
+            stated_observations=["I see the submit button"],
+            reasoning_steps=["The form is ready", "I should submit"],
+            stated_intent="Submit the form",
+            action_target="submit_button",
+            action_type="click",
+            references_made=["submit button", "form"],
+        )
+        self.assertEqual(facts.action_type, "click")
+        self.assertEqual(facts.action_target, "submit_button")
+        self.assertEqual(len(facts.reasoning_steps), 2)
+
+    @patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'})
+    def test_fact_extractor_initialization(self):
+        """Test fact extractor initializes correctly."""
+        with patch('verifier.generic_fact_extractor.OpenAI'):
+            extractor = GenericFactExtractor(logger=self.logger)
+            self.assertEqual(extractor.model, "gpt-4o-mini")
+            self.assertEqual(extractor.temperature, 0.0)
+
+
+class TestConsistencyCheck(unittest.TestCase):
+    """Test the consistency check functionality."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.logger = logging.getLogger("test")
+        self.logger.setLevel(logging.WARNING)
+
+    def test_consistency_result_model(self):
+        """Test ConsistencyResult model."""
+        result = ConsistencyResult(
+            is_consistent=False,
+            violations=[
+                ConsistencyViolation(
+                    violation_type="ungrounded_reference",
+                    description="Agent references checkout button not visible",
+                    input_evidence="Visible: Home, Cart",
+                    output_evidence="Clicking checkout button",
+                    severity="high",
+                )
+            ],
+            score=0,
+            reasoning="Agent references non-existent element",
+        )
+        self.assertFalse(result.is_consistent)
+        self.assertEqual(result.score, 0)
+        self.assertEqual(len(result.violations), 1)
+        self.assertEqual(result.violations[0].violation_type, "ungrounded_reference")
+
+    @patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'})
+    def test_check_consistency_consistent(self):
+        """Test consistency check with consistent input/output."""
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.parsed = ConsistencyResult(
+            is_consistent=True,
+            violations=[],
+            score=2,
+            reasoning="Agent references match visible elements",
+        )
+
+        with patch('verifier.generic_fact_extractor.OpenAI') as mock_openai:
+            mock_client = Mock()
+            mock_client.beta.chat.completions.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            input_facts = ExtractedInputFacts(
+                task_goal="Click submit",
+                visible_elements=["Submit button", "Cancel button"],
+            )
+            output_facts = ExtractedOutputFacts(
+                stated_observations=["I see the submit button"],
+                action_target="Submit button",
+                action_type="click",
+            )
+
+            result = check_consistency(
+                input_facts, output_facts, mock_client, logger=self.logger
+            )
+
+            self.assertTrue(result.is_consistent)
+            self.assertEqual(result.score, 2)
+
+    @patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'})
+    def test_check_consistency_inconsistent(self):
+        """Test consistency check with inconsistent input/output."""
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.parsed = ConsistencyResult(
+            is_consistent=False,
+            violations=[
+                ConsistencyViolation(
+                    violation_type="ungrounded_reference",
+                    description="Agent clicks Checkout but it's not visible",
+                    input_evidence="Visible: Home, Cart",
+                    output_evidence="click(Checkout)",
+                    severity="high",
+                )
+            ],
+            score=0,
+            reasoning="Agent references non-existent element",
+        )
+
+        with patch('verifier.generic_fact_extractor.OpenAI') as mock_openai:
+            mock_client = Mock()
+            mock_client.beta.chat.completions.parse.return_value = mock_response
+            mock_openai.return_value = mock_client
+
+            input_facts = ExtractedInputFacts(
+                task_goal="Go to checkout",
+                visible_elements=["Home button", "Cart button"],
+            )
+            output_facts = ExtractedOutputFacts(
+                stated_observations=["I see the checkout button"],
+                action_target="Checkout",
+                action_type="click",
+                references_made=["Checkout button"],
+            )
+
+            result = check_consistency(
+                input_facts, output_facts, mock_client, logger=self.logger
+            )
+
+            self.assertFalse(result.is_consistent)
+            self.assertEqual(result.score, 0)
+            self.assertEqual(len(result.violations), 1)
+
+
+class TestTwoStepVerification(unittest.TestCase):
+    """Test the two-step verification process."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.logger = logging.getLogger("test")
+        self.logger.setLevel(logging.WARNING)
+
+    @patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'})
+    def test_two_step_verification_detects_hallucination(self):
+        """Test two-step verification detects hallucination."""
+        # Mock extraction result
+        mock_extraction = ExtractionResult(
+            input_facts=ExtractedInputFacts(
+                task_goal="Submit form",
+                visible_elements=["Home", "Cart"],
+                error_messages=[],
+                action_history=["click(submit) - failed", "click(submit) - failed"],
+            ),
+            output_facts=ExtractedOutputFacts(
+                stated_observations=["I see the submit button"],
+                action_target="submit",
+                action_type="click",
+            ),
+        )
+
+        # Mock consistency check result
+        mock_consistency = ConsistencyResult(
+            is_consistent=False,
+            violations=[
+                ConsistencyViolation(
+                    violation_type="ignored_history",
+                    description="Agent ignores that action failed twice",
+                    severity="high",
+                )
+            ],
+            score=0,
+            reasoning="Agent repeats failed action",
+        )
+
+        # Mock common sense check result
+        mock_common_sense_response = Mock()
+        mock_common_sense_response.choices = [Mock()]
+        mock_common_sense_response.choices[0].message.content = json.dumps({
+            "is_reasonable": False,
+            "violations": [
+                {
+                    "type": "repeated_failure",
+                    "description": "Agent repeats action that failed twice",
+                    "severity": "high",
+                    "suggested_category": "repetitive"
+                }
+            ],
+            "score": 0,
+            "reasoning": "Repeating failed action is not reasonable",
+            "confidence": "high",
+            "emergent_type": "repetitive"
+        })
+
+        with patch('verifier.generic_verifier.OpenAI') as mock_openai:
+            with patch('verifier.generic_fact_extractor.OpenAI'):
+                mock_client = Mock()
+                mock_openai.return_value = mock_client
+
+                # Mock fact extraction
+                mock_extract_response = Mock()
+                mock_extract_response.choices = [Mock()]
+                mock_extract_response.choices[0].message.parsed = mock_extraction.input_facts
+
+                # Mock consistency
+                mock_consistency_response = Mock()
+                mock_consistency_response.choices = [Mock()]
+                mock_consistency_response.choices[0].message.parsed = mock_consistency
+
+                mock_client.beta.chat.completions.parse.side_effect = [
+                    mock_extract_response,  # input extraction
+                    Mock(choices=[Mock(message=Mock(parsed=mock_extraction.output_facts))]),  # output extraction
+                    mock_consistency_response,  # consistency check
+                ]
+
+                mock_client.chat.completions.create.return_value = mock_common_sense_response
+
+                verifier = GenericHallucinationVerifier(logger=self.logger)
+
+                # Manually test the _verify_two_step method
+                # We'll patch the extractor's extract method
+                verifier.fact_extractor.extract = Mock(return_value=mock_extraction)
+
+                # Patch check_consistency
+                with patch('verifier.generic_verifier.check_consistency', return_value=mock_consistency):
+                    result = verifier._verify_two_step(
+                        input_text="Task: Submit form. Visible: Home, Cart",
+                        thinking="I will click submit",
+                        action="click(submit)",
+                    )
+
+                self.assertEqual(result["thinking_eval"], 0)
+                self.assertTrue(result["is_hallucination"])
+                self.assertEqual(result["verifier_type"], "generic_two_step")
+                self.assertFalse(result["consistency_check"]["is_consistent"])
+                self.assertFalse(result["common_sense_check"]["is_reasonable"])
 
 
 if __name__ == "__main__":

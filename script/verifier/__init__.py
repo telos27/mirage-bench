@@ -25,6 +25,15 @@ from .logic_verify_repetitive import LogicVerifyRepetitive, HybridVerifyRepetiti
 from .souffle_verify_repetitive import SouffleVerifyRepetitive
 from .hybrid_verify_repetitive import NeuroSymbolicVerifyRepetitive
 from .generic_verifier import GenericHallucinationVerifier
+from .souffle_generic_verifier import SouffleGenericVerifier
+from .generic_fact_extractor import (
+    GenericFactExtractor,
+    ExtractedInputFacts,
+    ExtractedOutputFacts,
+    ExtractionResult,
+    ConsistencyResult,
+    check_consistency,
+)
 
 __all__ = [
     "BaseVerifier",
@@ -50,4 +59,11 @@ __all__ = [
     "SouffleVerifyRepetitive",
     "NeuroSymbolicVerifyRepetitive",
     "GenericHallucinationVerifier",
+    "GenericFactExtractor",
+    "ExtractedInputFacts",
+    "ExtractedOutputFacts",
+    "ExtractionResult",
+    "ConsistencyResult",
+    "check_consistency",
+    "SouffleGenericVerifier",
 ]

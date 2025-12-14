@@ -233,6 +233,7 @@ def get_verifier(
     use_souffle_verifier: bool = False,
     use_neurosymbolic_verifier: bool = False,
     use_generic_verifier: bool = False,
+    use_souffle_generic_verifier: bool = False,
 ):
 
     common_kwargs = dict(
@@ -244,6 +245,14 @@ def get_verifier(
         use_souffle_verifier=use_souffle_verifier,
         use_neurosymbolic_verifier=use_neurosymbolic_verifier,
     )
+
+    # Hybrid Soufflé+LLM generic verifier (Step 1: Soufflé FREE, Step 2: LLM)
+    if use_souffle_generic_verifier:
+        from verifier import SouffleGenericVerifier
+        generic_kwargs = {k: v for k, v in common_kwargs.items()
+                         if k not in ['use_logic_verifier', 'use_souffle_verifier', 'use_neurosymbolic_verifier']}
+        verifier = SouffleGenericVerifier(logger, **generic_kwargs)
+        return verifier
 
     # Generic verifier is type-agnostic - check first
     if use_generic_verifier:
