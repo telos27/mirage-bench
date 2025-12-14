@@ -18,6 +18,21 @@
 | Generic | LLM common sense | Medium |
 | Soufflé-Generic | Heuristic + Datalog + LLM hybrid | Low |
 
+### Agent Verifier (In Development)
+
+General-purpose AI agent verification system with 6-layer architecture:
+
+| Layer | Name | Description |
+|-------|------|-------------|
+| 1 | Common Knowledge | Universal truths, logic, formats |
+| 2 | Domain Best Practices | Agent-type specific patterns |
+| 3 | Business Policies | Per-deployment rules |
+| 4 | User Preferences | Per-user settings |
+| 5 | Session Context | Conversation history |
+| 6 | Active Request | Current prompt constraints |
+
+Location: `/agent_verifier/`
+
 ## Session Logs
 
 - [2025-12-13: Logic Verifier Implementation](./sessions/2025-12-13-logic-verifier-implementation.md)
