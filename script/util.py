@@ -231,6 +231,7 @@ def get_verifier(
     result_field_name: Optional[str] = None,
     use_logic_verifier: bool = False,
     use_souffle_verifier: bool = False,
+    use_neurosymbolic_verifier: bool = False,
 ):
 
     common_kwargs = dict(
@@ -240,6 +241,7 @@ def get_verifier(
         result_field_name=result_field_name,
         use_logic_verifier=use_logic_verifier,
         use_souffle_verifier=use_souffle_verifier,
+        use_neurosymbolic_verifier=use_neurosymbolic_verifier,
     )
     if type == "unexpected_transition":
         if scenario == "theagentcompany":
@@ -296,7 +298,11 @@ def get_verifier(
             # Check which verifier is requested
             use_logic = common_kwargs.pop("use_logic_verifier", False)
             use_souffle = common_kwargs.pop("use_souffle_verifier", False)
-            if use_souffle:
+            use_neurosymbolic = common_kwargs.pop("use_neurosymbolic_verifier", False)
+            if use_neurosymbolic:
+                from verifier import NeuroSymbolicVerifyRepetitive
+                verifier = NeuroSymbolicVerifyRepetitive(logger, **common_kwargs)
+            elif use_souffle:
                 from verifier import SouffleVerifyRepetitive
                 verifier = SouffleVerifyRepetitive(logger, **common_kwargs)
             elif use_logic:

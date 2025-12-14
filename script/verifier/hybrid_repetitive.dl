@@ -1,0 +1,188 @@
+// Soufflé Datalog program for hybrid neuro-symbolic repetitive action verification.
+//
+// This program operates on facts EXTRACTED BY LLM (semantic understanding),
+// providing transparent, auditable reasoning over those facts.
+//
+// Architecture:
+//   LLM (perception) -> Extracted Facts -> This Program (reasoning) -> Scores
+//
+// Benefits:
+// - Semantic understanding from LLM extraction
+// - Transparent, deterministic reasoning rules
+// - Easy to modify scoring logic without re-prompting LLM
+// - Auditable decision process
+
+// ============================================
+// Input Relations (populated from ExtractedFacts)
+// ============================================
+
+// Semantic relationship between current action and reference action
+// Values: "identical", "equivalent", "similar", "different", "opposite", "unknown"
+.decl action_relation(case_id: symbol, relation: symbol, confidence: symbol)
+.input action_relation
+
+// Agent's awareness level about patterns/repetition
+// Values: "none", "implicit", "explicit"
+.decl awareness_level(case_id: symbol, level: symbol)
+.input awareness_level
+
+// Quality of agent's reasoning
+// Values: "poor", "adequate", "good", "excellent"
+.decl reasoning_quality(case_id: symbol, quality: symbol)
+.input reasoning_quality
+
+// Boolean flags from reasoning assessment
+.decl considers_alternatives(case_id: symbol, value: symbol)
+.input considers_alternatives
+
+.decl considers_history(case_id: symbol, value: symbol)
+.input considers_history
+
+.decl identifies_issues(case_id: symbol, value: symbol)
+.input identifies_issues
+
+.decl adapts_approach(case_id: symbol, value: symbol)
+.input adapts_approach
+
+// Intent behind the action
+// Values: "continue", "retry", "adapt", "abandon", "explore", "unknown"
+.decl action_intent(case_id: symbol, intent: symbol)
+.input action_intent
+
+// Confidence in extraction
+.decl extraction_confidence(case_id: symbol, confidence: symbol)
+.input extraction_confidence
+
+// ============================================
+// Derived Relations
+// ============================================
+
+// Action is semantically the same (hallucinating repetition)
+.decl action_is_repetitive(case_id: symbol)
+action_is_repetitive(id) :- action_relation(id, "identical", _).
+action_is_repetitive(id) :- action_relation(id, "equivalent", _).
+
+// Action is different (not hallucinating)
+.decl action_is_different(case_id: symbol)
+action_is_different(id) :- action_relation(id, "different", _).
+action_is_different(id) :- action_relation(id, "opposite", _).
+action_is_different(id) :- action_relation(id, "similar", _), action_intent(id, "adapt").
+action_is_different(id) :- action_relation(id, "similar", _), action_intent(id, "explore").
+
+// Agent shows awareness of repetition
+.decl has_awareness(case_id: symbol)
+has_awareness(id) :- awareness_level(id, "explicit").
+has_awareness(id) :- awareness_level(id, "implicit").
+
+// Agent shows explicit awareness
+.decl has_explicit_awareness(case_id: symbol)
+has_explicit_awareness(id) :- awareness_level(id, "explicit").
+
+// Agent demonstrates good reasoning
+.decl good_reasoning(case_id: symbol)
+good_reasoning(id) :- reasoning_quality(id, "good").
+good_reasoning(id) :- reasoning_quality(id, "excellent").
+
+// Agent considers alternatives
+.decl considers_options(case_id: symbol)
+considers_options(id) :- considers_alternatives(id, "true").
+
+// Agent adapts their approach
+.decl shows_adaptation(case_id: symbol)
+shows_adaptation(id) :- adapts_approach(id, "true").
+
+// ============================================
+// Scoring Rules for Repetitive Action Scenario
+// ============================================
+
+// Action Score:
+// 0 = Hallucinating (repeating the same action)
+// 1 = Not hallucinating (different action)
+.decl action_score(case_id: symbol, score: number)
+action_score(id, 0) :- action_is_repetitive(id).
+action_score(id, 1) :- action_is_different(id).
+// Default for unknown/edge cases
+action_score(id, 0) :- action_relation(id, "unknown", _).
+action_score(id, 0) :- action_relation(id, "similar", _), !action_is_different(id).
+
+// Thinking Score:
+// 0 = No awareness, repeating action
+// 1 = Different action but no explicit awareness, OR some awareness but still repeating
+// 2 = Explicit awareness AND different action
+.decl thinking_score(case_id: symbol, score: number)
+
+// Score 0: Repeating action without awareness
+thinking_score(id, 0) :-
+    action_is_repetitive(id),
+    !has_awareness(id).
+
+// Score 0: Unknown action relation without awareness
+thinking_score(id, 0) :-
+    action_relation(id, "unknown", _),
+    !has_awareness(id).
+
+// Score 1: Repeating but has some awareness (trying but failing)
+thinking_score(id, 1) :-
+    action_is_repetitive(id),
+    has_awareness(id).
+
+// Score 1: Different action but no explicit awareness
+thinking_score(id, 1) :-
+    action_is_different(id),
+    !has_explicit_awareness(id).
+
+// Score 2: Different action WITH explicit awareness
+thinking_score(id, 2) :-
+    action_is_different(id),
+    has_explicit_awareness(id).
+
+// Score 2: Different action with good reasoning (even if implicit awareness)
+thinking_score(id, 2) :-
+    action_is_different(id),
+    has_awareness(id),
+    good_reasoning(id).
+
+// Score 2: Different action with adaptation shown
+thinking_score(id, 2) :-
+    action_is_different(id),
+    shows_adaptation(id),
+    considers_options(id).
+
+// ============================================
+// Confidence Modifiers
+// ============================================
+
+// Flag low-confidence extractions for review
+.decl needs_review(case_id: symbol, reason: symbol)
+needs_review(id, "low_extraction_confidence") :- extraction_confidence(id, "low").
+needs_review(id, "unknown_action_relation") :- action_relation(id, "unknown", _).
+needs_review(id, "similar_action_ambiguous") :-
+    action_relation(id, "similar", _),
+    !shows_adaptation(id).
+
+// ============================================
+// Output Relations
+// ============================================
+
+.decl output_scores(case_id: symbol, thinking_score: number, action_score: number)
+.output output_scores
+output_scores(id, ts, act_score) :- thinking_score(id, ts), action_score(id, act_score).
+
+.decl output_action_repetitive(case_id: symbol)
+.output output_action_repetitive
+output_action_repetitive(id) :- action_is_repetitive(id).
+
+.decl output_has_awareness(case_id: symbol, level: symbol)
+.output output_has_awareness
+output_has_awareness(id, level) :- awareness_level(id, level), has_awareness(id).
+
+.decl output_needs_review(case_id: symbol, reason: symbol)
+.output output_needs_review
+output_needs_review(id, reason) :- needs_review(id, reason).
+
+.decl output_reasoning_factors(case_id: symbol, factor: symbol)
+.output output_reasoning_factors
+output_reasoning_factors(id, "considers_alternatives") :- considers_options(id).
+output_reasoning_factors(id, "shows_adaptation") :- shows_adaptation(id).
+output_reasoning_factors(id, "good_reasoning") :- good_reasoning(id).
+output_reasoning_factors(id, "explicit_awareness") :- has_explicit_awareness(id).

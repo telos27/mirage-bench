@@ -110,6 +110,12 @@ def main():
         help="Use Souffle Datalog-based verifier (for repetitive_4/repetitive_7 only)",
     )
 
+    parser.add_argument(
+        "--use-neurosymbolic-verifier",
+        action="store_true",
+        help="Use Neuro-Symbolic verifier: LLM extracts facts, Datalog reasons (for repetitive_4/repetitive_7 only)",
+    )
+
     args = parser.parse_args()
 
     inference_results_dir = Path("../inferenced_results")
@@ -135,6 +141,7 @@ def main():
         result_field_name=args.result_field_name,
         use_logic_verifier=args.use_logic_verifier,
         use_souffle_verifier=args.use_souffle_verifier,
+        use_neurosymbolic_verifier=args.use_neurosymbolic_verifier,
     )
 
     # Load inference results and run verification
