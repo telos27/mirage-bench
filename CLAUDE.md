@@ -66,6 +66,7 @@ python3 script/verifier.py --type <type> --scenario <scenario> --model <model> -
 # Run tests (FREE - no API calls)
 python3 script/test_logic_verifier.py --test-scenarios
 python3 script/test_generic_verifier.py  # Tests for generic verifier (mocked LLM)
+python3 script/test_heuristic_fact_extractor.py  # Tests for heuristic fact extractor
 ```
 
 ## Cost-Free Operations
@@ -76,6 +77,7 @@ These operations do NOT use LLM APIs:
 - `test_logic_verifier.py` - Unit tests for logic verifier
 - `test_neurosymbolic_verifier.py` - Unit tests for neuro-symbolic verifier (mocked LLM)
 - `test_generic_verifier.py` - Unit tests for generic verifier (mocked LLM)
+- `test_heuristic_fact_extractor.py` - Unit tests for heuristic fact extractor (no LLM)
 - `analyze_repetitive_patterns.py` - Pattern analysis
 - Reading/analyzing dataset files
 

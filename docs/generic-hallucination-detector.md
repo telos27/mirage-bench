@@ -107,7 +107,80 @@ Input Facts ──→ LLM ──→ "Does this make sense?" ──→ Violations
 - Reasoning is opaque
 - Non-deterministic
 
-### Phase 2: Extract Common Sense into Logic (Future)
+### Phase 2: Soufflé-Generic Hybrid (Implemented)
+
+Combines heuristic extraction, Datalog rules, and LLM for cost-effective verification:
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Heuristic     │     │      LLM        │     │    Soufflé      │
+│   Extraction    │     │   Extraction    │     │   Consistency   │
+│   (Input)       │     │   (Output)      │     │   Check         │
+│   FREE          │     │   $$$           │     │   FREE          │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         └───────────┬───────────┴───────────────────────┘
+                     │
+                     ▼
+              ┌─────────────────┐
+              │  Common Sense   │
+              │  (LLM)          │
+              │  $$$            │
+              └─────────────────┘
+```
+
+**Key optimizations:**
+- **Input facts**: Heuristic parsing of AXTree (FREE, extracts 78+ elements vs 10 from LLM)
+- **Output facts**: LLM extraction (semantic understanding needed)
+- **Consistency check**: Soufflé Datalog rules (FREE, transparent)
+- **Common sense**: LLM (requires world knowledge)
+
+**Heuristic fact extraction** (`heuristic_fact_extractor.py`):
+- Parses AXTree directly using regex patterns
+- Extracts links, buttons, tabs, cells, headings, menu items, images
+- Finds error messages with deduplication
+- Parses action history with outcomes
+- Extracts task goal and state info
+
+**Example patterns:**
+```python
+ELEMENT_PATTERNS = [
+    r"\[(\d+)\]\s+link\s+'([^']+)'",      # Links
+    r"\[(\d+)\]\s+button\s+'([^']+)'",    # Buttons
+    r"StaticText\s+'([^']+)'",            # Static text
+    r"\[(\d+)\]\s+tab\s+'([^']+)'",       # Tabs
+    r"\[(\d+)\]\s+cell\s+'([^']+)'",      # Cells
+]
+```
+
+**Datalog consistency rules** (`generic_consistency.dl`):
+```datalog
+// Detect ungrounded references
+violation(ID, "ungrounded_reference", Ref) :-
+    reference_made(ID, Ref),
+    !visible_element_matches(ID, Ref).
+
+// Detect ignored errors
+violation(ID, "ignored_error", Err) :-
+    error_message(ID, Err),
+    !acknowledges_error(ID, Err).
+```
+
+**Results after optimizations:**
+
+| Case | Before Fixes | After Fixes | Improvement |
+|------|-------------|-------------|-------------|
+| webarena.168 | 4 violations | 3 violations | 1 false positive removed |
+| webarena.489 | 17 violations | 4 violations | 13 false positives removed |
+| webarena.6 | 18 violations | 4 violations | 14 false positives removed |
+
+**Advantages:**
+- Transparent, auditable reasoning (Datalog rules)
+- Reduced cost (heuristic extraction is FREE)
+- Better coverage (78+ elements vs 10 from LLM)
+- Fewer false positives (word stemming, deduplication)
+
+### Phase 3: Pure Datalog (Future)
 
 ```
 Input Facts ──→ Soufflé ──→ Violations
@@ -116,7 +189,7 @@ Input Facts ──→ Soufflé ──→ Violations
 ```
 
 **Process:**
-1. Use Phase 1 to identify common violation patterns
+1. Use Phase 2 to identify common violation patterns
 2. Ask LLM to articulate the rules it's using
 3. Convert rules to Datalog
 4. Run Soufflé for fast, transparent checking
@@ -175,9 +248,13 @@ class Violation(BaseModel):
 ### Command Line
 
 ```bash
-# Run generic hallucination detection
+# Run generic hallucination detection (pure LLM)
 python3 script/verifier.py --type <any_type> --scenario <scenario> \
     --model <model> --use-generic-verifier
+
+# Run Soufflé-Generic hybrid (recommended - reduced cost)
+python3 script/verifier.py --type <any_type> --scenario <scenario> \
+    --model <model> --use-souffle-generic-verifier
 ```
 
 ### Programmatic
@@ -250,6 +327,29 @@ This is analogous to LLMs detecting bugs in LLM-generated code. The same model t
 4. **Hierarchical detection**:
    - Fast Datalog rules for obvious cases
    - LLM fallback for nuanced cases
+
+## Key Files
+
+| File | Description |
+|------|-------------|
+| `script/verifier/generic_schema.py` | Generic fact schema and violation types |
+| `script/verifier/generic_verifier.py` | Pure LLM common sense verifier |
+| `script/verifier/generic_fact_extractor.py` | LLM-based fact extraction |
+| `script/verifier/heuristic_fact_extractor.py` | Rule-based input fact extraction (FREE) |
+| `script/verifier/souffle_generic_verifier.py` | Hybrid Soufflé-Generic verifier |
+| `script/verifier/generic_consistency.dl` | Datalog consistency rules |
+| `script/test_generic_verifier.py` | Unit tests for generic verifier |
+| `script/test_heuristic_fact_extractor.py` | Unit tests for heuristic extractor |
+
+## Testing
+
+```bash
+# Test generic verifier (mocked LLM)
+python3 script/test_generic_verifier.py
+
+# Test heuristic fact extractor (no LLM needed)
+python3 script/test_heuristic_fact_extractor.py
+```
 
 ## References
 
