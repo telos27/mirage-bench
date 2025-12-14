@@ -21,6 +21,7 @@ from .verify_erroneous_webarena import VerifyErroneousWebarena
 from .verify_erroneous_swebench import VerifyErroneousSWEbench
 from .verify_misleading_swebench import VerifyMisleadingSWEbench
 from .verify_misleading_webarena import VerifyMisleadingWebarena
+from .logic_verify_repetitive import LogicVerifyRepetitive, HybridVerifyRepetitive
 
 __all__ = [
     "BaseVerifier",
@@ -41,4 +42,6 @@ __all__ = [
     "VerifyErroneousSWEbench",
     "VerifyErroneousWebarena",
     "VerifyMisleadingSWEbench",
+    "LogicVerifyRepetitive",
+    "HybridVerifyRepetitive",
 ]

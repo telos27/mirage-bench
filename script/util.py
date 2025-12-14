@@ -289,9 +289,14 @@ def get_verifier(
 
     elif type == "repetitive_4" or type == "repetitive_7":
         if scenario == "webarena" or scenario == "workarena":
-            from verifier import VerifyRepetitive
-
-            verifier = VerifyRepetitive(logger, **common_kwargs)
+            # Check if logic-based verifier is requested
+            use_logic = common_kwargs.pop("use_logic_verifier", False)
+            if use_logic:
+                from verifier import LogicVerifyRepetitive
+                verifier = LogicVerifyRepetitive(logger, **common_kwargs)
+            else:
+                from verifier import VerifyRepetitive
+                verifier = VerifyRepetitive(logger, **common_kwargs)
         elif scenario == "osworld":
             from verifier import VerifyRepetitiveOSWorld
 
