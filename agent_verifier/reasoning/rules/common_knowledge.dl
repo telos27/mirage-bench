@@ -1,0 +1,177 @@
+// Common Knowledge Rules (Layer 1)
+//
+// These rules capture universal truths that apply to all agent types:
+// - Logical consistency
+// - Grounded references (don't mention things not in context)
+// - Error awareness
+// - Repeated failure detection
+//
+// These are domain-agnostic rules that represent common sense.
+
+// ============================================
+// Input Relations (populated by fact extractor)
+// ============================================
+
+// Context elements: things present in the input context
+// These are facts the agent "can see"
+.decl context_element(case_id: symbol, element: symbol)
+.input context_element
+
+// Error indicators in the context
+.decl context_error(case_id: symbol, error_msg: symbol)
+.input context_error
+
+// Warning indicators in the context
+.decl context_warning(case_id: symbol, warning_msg: symbol)
+.input context_warning
+
+// Previous actions and outcomes
+// outcome: "success", "failed", "error", "timeout", "unknown"
+.decl action_history(case_id: symbol, action: symbol, outcome: symbol)
+.input action_history
+
+// The current request/task
+.decl request_task(case_id: symbol, task: symbol)
+.input request_task
+
+// --- Output facts (what the agent produces) ---
+
+// Elements the agent references in its output
+.decl output_reference(case_id: symbol, reference: symbol)
+.input output_reference
+
+// Claims the agent makes about facts
+.decl output_claim(case_id: symbol, claim: symbol)
+.input output_claim
+
+// The action the agent takes
+.decl output_action(case_id: symbol, action: symbol)
+.input output_action
+
+// The target of the agent's action
+.decl output_target(case_id: symbol, target: symbol)
+.input output_target
+
+// Agent acknowledges errors
+.decl acknowledges_error(case_id: symbol)
+.input acknowledges_error
+
+// Agent acknowledges previous attempts
+.decl acknowledges_history(case_id: symbol)
+.input acknowledges_history
+
+// ============================================
+// Derived Relations - Violation Detection
+// ============================================
+
+// Violation: Ungrounded Reference
+// Agent references something not present in context
+.decl ungrounded_reference(case_id: symbol, reference: symbol)
+ungrounded_reference(id, ref) :-
+    output_reference(id, ref),
+    !context_element(id, ref),
+    ref != "",
+    ref != "none",
+    ref != "unknown".
+
+// Violation: Ignored Error
+// Error exists in context but agent doesn't acknowledge
+.decl ignored_error(case_id: symbol, error_msg: symbol)
+ignored_error(id, msg) :-
+    context_error(id, msg),
+    !acknowledges_error(id).
+
+// Violation: Ignored Warning
+// Warning exists in context but agent proceeds without acknowledgment
+.decl ignored_warning(case_id: symbol, warning_msg: symbol)
+ignored_warning(id, msg) :-
+    context_warning(id, msg),
+    !acknowledges_error(id).  // Same check - did they acknowledge issues?
+
+// Violation: Repeated Failed Action
+// Agent attempts an action that already failed
+.decl repeated_failed_action(case_id: symbol, action: symbol)
+repeated_failed_action(id, action) :-
+    output_action(id, action),
+    action_history(id, action, "failed"),
+    !acknowledges_history(id).
+
+repeated_failed_action(id, action) :-
+    output_action(id, action),
+    action_history(id, action, "error"),
+    !acknowledges_history(id).
+
+repeated_failed_action(id, action) :-
+    output_action(id, action),
+    action_history(id, action, "timeout"),
+    !acknowledges_history(id).
+
+// Violation: Target Not In Context
+// Agent targets something not visible in context
+.decl target_not_in_context(case_id: symbol, target: symbol)
+target_not_in_context(id, target) :-
+    output_target(id, target),
+    !context_element(id, target),
+    target != "",
+    target != "none",
+    target != "unknown".
+
+// ============================================
+// Violation Aggregation
+// ============================================
+
+.decl has_violation(case_id: symbol, vtype: symbol)
+has_violation(id, "ungrounded_reference") :- ungrounded_reference(id, _).
+has_violation(id, "ignored_error") :- ignored_error(id, _).
+has_violation(id, "ignored_warning") :- ignored_warning(id, _).
+has_violation(id, "repeated_failed_action") :- repeated_failed_action(id, _).
+has_violation(id, "target_not_in_context") :- target_not_in_context(id, _).
+
+// Count of violation types (not individual violations)
+.decl violation_type_count(case_id: symbol, cnt: number)
+violation_type_count(id, c) :-
+    request_task(id, _),
+    c = count : { has_violation(id, _) }.
+
+// ============================================
+// Consistency Assessment
+// ============================================
+
+// Case is consistent if no violations
+.decl is_consistent(case_id: symbol)
+is_consistent(id) :-
+    request_task(id, _),
+    !has_violation(id, _).
+
+// Consistency score:
+// 2 = fully consistent (no violations)
+// 1 = minor issues (1 violation type)
+// 0 = major issues (2+ violation types)
+.decl consistency_score(case_id: symbol, score: number)
+consistency_score(id, 2) :- is_consistent(id).
+consistency_score(id, 1) :- violation_type_count(id, 1).
+consistency_score(id, 0) :- violation_type_count(id, c), c >= 2.
+
+// ============================================
+// Output Relations
+// ============================================
+
+// Main consistency output
+.decl output_consistency(case_id: symbol, consistent: symbol, score: number)
+.output output_consistency
+output_consistency(id, "true", score) :- is_consistent(id), consistency_score(id, score).
+output_consistency(id, "false", score) :- !is_consistent(id), consistency_score(id, score), request_task(id, _).
+
+// All violations found
+.decl output_violation(case_id: symbol, vtype: symbol, detail: symbol, severity: symbol)
+.output output_violation
+output_violation(id, "ungrounded_reference", ref, "warning") :- ungrounded_reference(id, ref).
+output_violation(id, "ignored_error", msg, "error") :- ignored_error(id, msg).
+output_violation(id, "ignored_warning", msg, "warning") :- ignored_warning(id, msg).
+output_violation(id, "repeated_failed_action", action, "error") :- repeated_failed_action(id, action).
+output_violation(id, "target_not_in_context", target, "warning") :- target_not_in_context(id, target).
+
+// Violation count summary
+.decl output_violation_count(case_id: symbol, cnt: number)
+.output output_violation_count
+output_violation_count(id, c) :- violation_type_count(id, c).
