@@ -24,6 +24,7 @@ from .verify_misleading_webarena import VerifyMisleadingWebarena
 from .logic_verify_repetitive import LogicVerifyRepetitive, HybridVerifyRepetitive
 from .souffle_verify_repetitive import SouffleVerifyRepetitive
 from .hybrid_verify_repetitive import NeuroSymbolicVerifyRepetitive
+from .generic_verifier import GenericHallucinationVerifier
 
 __all__ = [
     "BaseVerifier",
@@ -48,4 +49,5 @@ __all__ = [
     "HybridVerifyRepetitive",
     "SouffleVerifyRepetitive",
     "NeuroSymbolicVerifyRepetitive",
+    "GenericHallucinationVerifier",
 ]

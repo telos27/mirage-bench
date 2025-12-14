@@ -45,8 +45,13 @@ python3 script/verifier.py --type <type> --scenario <scenario> --model <model> -
 # This combines LLM-based semantic understanding with Datalog-based transparent reasoning
 python3 script/verifier.py --type <type> --scenario <scenario> --model <model> --use-neurosymbolic-verifier
 
+# Run verification with Generic common-sense verifier (REQUIRES API KEY)
+# Type-agnostic hallucination detection using LLM common sense
+python3 script/verifier.py --type <type> --scenario <scenario> --model <model> --use-generic-verifier
+
 # Run tests (FREE - no API calls)
 python3 script/test_logic_verifier.py --test-scenarios
+python3 script/test_generic_verifier.py  # Tests for generic verifier (mocked LLM)
 ```
 
 ## Cost-Free Operations
@@ -56,6 +61,7 @@ These operations do NOT use LLM APIs:
 - `--use-souffle-verifier` flag for repetitive_4/repetitive_7 verification (requires Soufflé installed)
 - `test_logic_verifier.py` - Unit tests for logic verifier
 - `test_neurosymbolic_verifier.py` - Unit tests for neuro-symbolic verifier (mocked LLM)
+- `test_generic_verifier.py` - Unit tests for generic verifier (mocked LLM)
 - `analyze_repetitive_patterns.py` - Pattern analysis
 - Reading/analyzing dataset files
 
@@ -67,6 +73,42 @@ These operations do NOT use LLM APIs:
 | Logic-based | ❌ Keywords only | ✅ Deterministic | Free | `--use-logic-verifier` |
 | Soufflé | ❌ Keywords only | ✅ Datalog rules | Free | `--use-souffle-verifier` |
 | Neuro-Symbolic | ✅ LLM extraction | ✅ Datalog rules | Medium | `--use-neurosymbolic-verifier` |
+| Generic | ✅ Common sense | ✅ Violation-based | Medium | `--use-generic-verifier` |
+
+### Generic Hallucination Verifier (NEW)
+
+A type-agnostic approach that detects hallucinations using common sense rather than predefined hallucination types.
+
+```
+┌─────────────────────┐         ┌─────────────────────┐
+│     LLM Input       │         │    Common Sense     │
+│  (what agent sees)  │         │  (LLM world model)  │
+└─────────────────────┘         └─────────────────────┘
+         │                               │
+         └──────────┬────────────────────┘
+                    ▼
+          "Does this make sense?"
+                    │
+                    ▼
+           Violations detected
+```
+
+**Key insight**: All hallucinations are a disconnect between agent behavior and reality.
+
+**Violation types detected**:
+- `ungrounded_reference` - References something not in observations
+- `ignored_evidence` - Ignores important information (errors, mismatches)
+- `reasoning_mismatch` - Action contradicts reasoning
+- `repeated_failure` - Repeats action that already failed
+- `state_confusion` - Misunderstands current state
+- `fabrication` - Makes up information
+
+**Emergent typing**: Hallucination "type" is derived from violations, not predefined.
+
+Key files:
+- `script/verifier/generic_schema.py` - Generic fact schema
+- `script/verifier/generic_verifier.py` - Common sense verifier
+- `docs/generic-hallucination-detector.md` - Full documentation
 
 ### Neuro-Symbolic Verifier Architecture
 
