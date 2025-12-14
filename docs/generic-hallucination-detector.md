@@ -197,14 +197,44 @@ result = verifier()
 
 ## Evaluation
 
-To validate this approach:
+### Initial Results (repetitive_4/webarena)
 
-1. Run generic verifier on existing labeled datasets
-2. Compare detected violations with ground truth labels
-3. Measure:
-   - **Recall**: Does it catch the hallucinations we've labeled?
-   - **Precision**: Are its detections valid?
-   - **Novel detection**: Does it find issues we didn't label?
+Tested on 3 cases of repetitive hallucinations:
+
+| Metric | Value |
+|--------|-------|
+| Test cases | 3 |
+| Hallucinations detected | 3 (100%) |
+| Confidence | High (all 3) |
+
+**Emergent type accuracy:**
+- 2/3 correctly derived as "repetitive" from `repeated_failure` violations
+- 1/3 classified as "ungrounded_reference" (noop action harder to recognize as repetitive)
+
+**Violation types detected:**
+- `repeated_failure`: 2
+- `ignored_evidence`: 1
+- `state_confusion`: 1
+
+### Key Finding: LLMs Can Detect LLM Failures
+
+An interesting asymmetry emerges:
+
+| Task | Difficulty | Why |
+|------|------------|-----|
+| Generate correct behavior | Hard | Must synthesize under uncertainty |
+| Verify if behavior is correct | Easier | Check if output matches constraints |
+
+**Why the verifier succeeds where the agent fails:**
+
+1. **Verification is easier than generation** - checking is simpler than creating
+2. **Fresh context** - verifier isn't anchored to prior decisions
+3. **Different framing** - "critique this" vs "solve this"
+4. **Full observability** - verifier sees input + output + history together
+
+This is analogous to LLMs detecting bugs in LLM-generated code. The same model that writes buggy code can often find the bug when asked to review it.
+
+**Implication:** Self-consistency and self-critique loops can catch errors. Techniques like Constitutional AI, self-reflection, and chain-of-verification exploit this asymmetry.
 
 ## Future Extensions
 
