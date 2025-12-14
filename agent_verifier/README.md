@@ -78,6 +78,61 @@ custom_violation(id, msg) :-
 """)
 ```
 
+### Fact Extractors
+Extract structured facts from agent inputs and outputs.
+
+```python
+from agent_verifier.extractors import (
+    create_web_extractor,
+    HeuristicOutputExtractor,
+    HeuristicCombinedExtractor,
+)
+
+# Create domain-specific input extractor
+input_extractor = create_web_extractor()  # For web browser agents
+# Also: create_code_extractor(), create_chat_extractor()
+
+# Extract facts from agent input
+input_facts = input_extractor.extract("""
+    ## Goal:
+    Click the login button
+
+    [100] button 'Login'
+    [101] link 'Sign Up'
+""")
+print(input_facts.task_goal)        # "Click the login button"
+print(input_facts.visible_elements) # ["Login", "Sign Up"]
+
+# Extract facts from LLM output
+output_extractor = HeuristicOutputExtractor()
+output_facts = output_extractor.extract("I'll click('100') to log in")
+print(output_facts.action_target)   # "100"
+
+# Combined extraction
+combined = HeuristicCombinedExtractor(input_extractor)
+facts = combined.extract(prompt, output)
+```
+
+### Prompt Constraint Extractor
+Extract constraints from system prompts for Layer 6 verification.
+
+```python
+from agent_verifier.extractors import PromptConstraintExtractor
+
+extractor = PromptConstraintExtractor()
+constraints = extractor.extract(
+    system_prompt="You must always cite sources. Never make up facts.",
+    user_message="Be concise in your response."
+)
+
+print(constraints.must_do)      # ["cite sources"]
+print(constraints.must_not)     # ["make up facts"]
+print(constraints.style_requirements)  # ["concise"]
+
+# Convert to rules for Datalog
+rules = extractor.extract_as_rules(system_prompt)
+```
+
 ### DatalogEngine
 Soufflé wrapper for deterministic, transparent reasoning.
 
@@ -121,6 +176,11 @@ print(f"Layers checked: {result.layers_checked}")
 agent_verifier/
 ├── engine/
 │   └── verifier.py          # VerificationEngine
+├── extractors/
+│   ├── base.py              # Base extractor interfaces
+│   ├── heuristic_input.py   # Input extractor with domain plugins
+│   ├── heuristic_output.py  # Output fact extractor
+│   └── prompt_constraints.py # Prompt constraint extraction
 ├── layers/
 │   ├── base_layer.py        # Abstract BaseLayer
 │   └── layer1_common.py     # CommonKnowledgeLayer
@@ -138,6 +198,10 @@ agent_verifier/
 │   ├── models.py            # SQLAlchemy models
 │   └── sqlite_store.py      # SQLiteStore
 └── tests/
+    ├── test_extractors.py   # Extractor tests
+    ├── test_prompt_constraints.py
+    ├── test_integration.py  # End-to-end tests
+    └── ...
 ```
 
 ## Requirements
@@ -162,15 +226,23 @@ python3 -m pytest agent_verifier/tests/ -v
 
 ## Implementation Status
 
-- [x] Phase 1: Foundation (Sessions 1-2)
+- [x] Phase 1: Foundation (Sessions 1-3)
   - [x] Core schemas
   - [x] SQLite storage
   - [x] DatalogEngine
   - [x] VerificationEngine
   - [x] Layer 1 (Common Knowledge)
-- [ ] Phase 1: Continued (Session 3-3.5)
-  - [ ] Fact extractors
+  - [x] Heuristic fact extractors (input, output)
+  - [x] Prompt constraint extractor
+  - [x] End-to-end integration tests
+- [ ] Phase 1: Continued (Session 3.5)
   - [ ] LLM rule extraction tool
 - [ ] Phase 2: Configuration Layers (Sessions 4-6)
+  - [ ] Layer 2: Domain Practices
+  - [ ] Layer 3: Business Policies
+  - [ ] Layer 4: User Preferences
 - [ ] Phase 3: Runtime Layers (Sessions 7-9)
+  - [ ] Layer 5: Session Context
+  - [ ] Layer 6: Prompt Constraints
+  - [ ] REST API
 - [ ] Phase 4: Polish (Session 10)
