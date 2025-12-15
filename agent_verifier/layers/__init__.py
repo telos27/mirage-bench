@@ -22,6 +22,16 @@ from .layer4_preferences import (
     create_beginner_preferences,
     create_executive_preferences,
 )
+from .layer5_session import (
+    SessionHistoryLayer,
+    SessionState,
+    create_session_from_turns,
+)
+from .layer6_prompt import (
+    PromptConstraintsLayer,
+    ConstraintCheckResult,
+    check_constraints,
+)
 
 __all__ = [
     # Base
@@ -51,4 +61,12 @@ __all__ = [
     "create_developer_preferences",
     "create_beginner_preferences",
     "create_executive_preferences",
+    # Layer 5: Session History
+    "SessionHistoryLayer",
+    "SessionState",
+    "create_session_from_turns",
+    # Layer 6: Prompt Constraints
+    "PromptConstraintsLayer",
+    "ConstraintCheckResult",
+    "check_constraints",
 ]

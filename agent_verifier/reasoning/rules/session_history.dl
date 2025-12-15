@@ -1,0 +1,326 @@
+// Session History Rules (Layer 5)
+//
+// These rules enforce multi-turn consistency:
+// - Contradiction detection (contradicts previous statements)
+// - Established fact tracking (remembers what was established)
+// - Progress tracking (doesn't lose progress)
+// - Question/answer coherence (doesn't re-ask answered questions)
+// - Identity consistency (consistent self-references)
+//
+// Session context enables detection of cross-turn hallucinations.
+
+// ============================================
+// Input Relations (populated by fact extractor)
+// ============================================
+
+// Request metadata
+.decl request_id(case_id: symbol)
+.input request_id
+
+// Session and user context
+.decl session_id(case_id: symbol, session: symbol)
+.input session_id
+
+.decl user_id(case_id: symbol, user: symbol)
+.input user_id
+
+// Current turn number (0-indexed)
+.decl current_turn(case_id: symbol, turn_num: number)
+.input current_turn
+
+// --- Previous Turn Facts ---
+
+// Statements made in previous turns
+// turn_num: which turn (0-indexed), speaker: "agent" or "user"
+.decl previous_statement(case_id: symbol, turn_num: number, speaker: symbol, statement: symbol)
+.input previous_statement
+
+// Claims made by agent in previous turns
+.decl previous_claim(case_id: symbol, turn_num: number, claim_type: symbol, claim_value: symbol)
+.input previous_claim
+
+// Questions asked by agent in previous turns
+.decl previous_question(case_id: symbol, turn_num: number, question: symbol)
+.input previous_question
+
+// Answers provided by user in previous turns
+.decl previous_answer(case_id: symbol, turn_num: number, answer_to: symbol, answer_value: symbol)
+.input previous_answer
+
+// Tasks/goals established in previous turns
+.decl previous_task(case_id: symbol, turn_num: number, task: symbol, status: symbol)
+.input previous_task
+
+// Progress made in previous turns
+.decl previous_progress(case_id: symbol, turn_num: number, progress_type: symbol, detail: symbol)
+.input previous_progress
+
+// Commitments/promises made by agent
+.decl previous_commitment(case_id: symbol, turn_num: number, commitment: symbol)
+.input previous_commitment
+
+// --- Established Facts (derived from session) ---
+
+// Facts established and confirmed in the session
+// source: "user_stated", "agent_confirmed", "mutually_agreed"
+.decl established_fact(case_id: symbol, fact_key: symbol, fact_value: symbol, source: symbol, confidence: number)
+.input established_fact
+
+// Current task/goal being worked on
+.decl current_task(case_id: symbol, task: symbol)
+.input current_task
+
+// Current progress state
+.decl current_progress(case_id: symbol, step: symbol, status: symbol)
+.input current_progress
+
+// --- Current Turn Output Facts ---
+
+// Claims made in current turn
+.decl output_claim(case_id: symbol, claim_type: symbol, claim_value: symbol)
+.input output_claim
+
+// Questions asked in current turn
+.decl output_question(case_id: symbol, question: symbol)
+.input output_question
+
+// References to previous turns
+.decl output_references_turn(case_id: symbol, turn_num: number)
+.input output_references_turn
+
+// Task-related output
+.decl output_task_action(case_id: symbol, task: symbol, action: symbol)
+.input output_task_action
+
+// Commitments made in current turn
+.decl output_commitment(case_id: symbol, commitment: symbol)
+.input output_commitment
+
+// Agent acknowledges previous context
+.decl acknowledges_context(case_id: symbol)
+.input acknowledges_context
+
+// Agent explicitly corrects previous statement
+.decl corrects_previous(case_id: symbol, turn_num: number, what: symbol)
+.input corrects_previous
+
+// ============================================
+// Derived Relations - Violation Detection
+// ============================================
+
+// Violation: Contradiction with previous claim
+// Agent says something that directly contradicts a previous claim
+.decl contradiction_detected(case_id: symbol, prev_turn: number, claim_type: symbol, old_value: symbol, new_value: symbol)
+contradiction_detected(id, turn, ctype, old_val, new_val) :-
+    previous_claim(id, turn, ctype, old_val),
+    output_claim(id, ctype, new_val),
+    old_val != new_val,
+    !corrects_previous(id, turn, ctype).
+
+// Violation: Forgotten established fact
+// Agent ignores or contradicts an established fact
+.decl forgotten_fact(case_id: symbol, fact_key: symbol, established_value: symbol, current_value: symbol)
+forgotten_fact(id, key, established, current) :-
+    established_fact(id, key, established, _, conf),
+    conf >= 80,
+    output_claim(id, key, current),
+    established != current,
+    !corrects_previous(id, _, key).
+
+// Violation: Re-asking answered question
+// Agent asks a question that was already answered
+.decl reasking_answered(case_id: symbol, question: symbol, answer_turn: number, answer_value: symbol)
+reasking_answered(id, q, ans_turn, ans_val) :-
+    output_question(id, q),
+    previous_question(id, ask_turn, q),
+    previous_answer(id, ans_turn, q, ans_val),
+    ans_turn > ask_turn.
+
+// Violation: Ignoring user-provided information
+// Agent ignores information the user explicitly provided
+.decl ignored_user_info(case_id: symbol, info_key: symbol, info_value: symbol, source_turn: number)
+ignored_user_info(id, key, val, turn) :-
+    established_fact(id, key, val, "user_stated", conf),
+    conf >= 70,
+    output_claim(id, key, different_val),
+    val != different_val,
+    previous_answer(id, turn, key, val),
+    !acknowledges_context(id).
+
+// Violation: Progress regression
+// Agent loses track of progress or restarts completed work
+.decl progress_regression(case_id: symbol, step: symbol, was_status: symbol, now_status: symbol)
+progress_regression(id, step, was, now) :-
+    previous_progress(id, _, step, was),
+    current_progress(id, step, now),
+    was = "completed",
+    now = "pending".
+
+progress_regression(id, step, was, now) :-
+    previous_progress(id, _, step, was),
+    current_progress(id, step, now),
+    was = "completed",
+    now = "in_progress".
+
+// Violation: Forgotten commitment
+// Agent made a commitment but doesn't follow through
+.decl forgotten_commitment(case_id: symbol, commitment: symbol, made_turn: number)
+forgotten_commitment(id, commitment, turn) :-
+    previous_commitment(id, turn, commitment),
+    current_turn(id, curr_turn),
+    curr_turn > turn + 1,  // Give one turn grace period
+    !output_commitment(id, commitment),
+    !output_task_action(id, commitment, "completed"),
+    !output_task_action(id, commitment, "in_progress").
+
+// Violation: Task confusion
+// Agent confuses the current task with something else
+.decl task_confusion(case_id: symbol, actual_task: symbol, confused_task: symbol)
+task_confusion(id, actual, confused) :-
+    current_task(id, actual),
+    output_task_action(id, confused, _),
+    actual != confused,
+    confused != "none",
+    !output_task_action(id, actual, _).
+
+// ============================================
+// Session Coherence Assessment
+// ============================================
+
+// Has any session-level violation
+.decl has_session_violation(case_id: symbol, vtype: symbol)
+has_session_violation(id, "contradiction") :- contradiction_detected(id, _, _, _, _).
+has_session_violation(id, "forgotten_fact") :- forgotten_fact(id, _, _, _).
+has_session_violation(id, "reasking_answered") :- reasking_answered(id, _, _, _).
+has_session_violation(id, "ignored_user_info") :- ignored_user_info(id, _, _, _).
+has_session_violation(id, "progress_regression") :- progress_regression(id, _, _, _).
+has_session_violation(id, "forgotten_commitment") :- forgotten_commitment(id, _, _).
+has_session_violation(id, "task_confusion") :- task_confusion(id, _, _).
+
+// Count of session violation types
+.decl session_violation_count(case_id: symbol, cnt: number)
+session_violation_count(id, c) :-
+    request_id(id),
+    c = count : { has_session_violation(id, _) }.
+
+// Session is coherent if no violations
+.decl session_coherent(case_id: symbol)
+session_coherent(id) :-
+    request_id(id),
+    session_id(id, _),
+    !has_session_violation(id, _).
+
+// Coherence score:
+// 2 = fully coherent (no violations)
+// 1 = minor issues (1-2 violation types)
+// 0 = major issues (3+ violation types)
+.decl session_coherence_score(case_id: symbol, score: number)
+session_coherence_score(id, 2) :- session_coherent(id).
+session_coherence_score(id, 1) :- session_violation_count(id, c), c >= 1, c <= 2.
+session_coherence_score(id, 0) :- session_violation_count(id, c), c >= 3.
+
+// Default score for requests without session
+session_coherence_score(id, 2) :-
+    request_id(id),
+    !session_id(id, _).
+
+// ============================================
+// Context Utilization Assessment
+// ============================================
+
+// Check if agent properly uses session context
+.decl uses_session_context(case_id: symbol)
+uses_session_context(id) :- acknowledges_context(id).
+uses_session_context(id) :- output_references_turn(id, _).
+uses_session_context(id) :-
+    established_fact(id, key, val, _, _),
+    output_claim(id, key, val).
+
+// Context utilization for multi-turn sessions
+.decl context_utilization(case_id: symbol, level: symbol)
+context_utilization(id, "high") :-
+    session_id(id, _),
+    uses_session_context(id),
+    session_coherent(id).
+context_utilization(id, "medium") :-
+    session_id(id, _),
+    uses_session_context(id),
+    !session_coherent(id).
+context_utilization(id, "low") :-
+    session_id(id, _),
+    !uses_session_context(id),
+    current_turn(id, turn),
+    turn > 0.
+context_utilization(id, "n/a") :-
+    request_id(id),
+    !session_id(id, _).
+
+// ============================================
+// Output Relations
+// ============================================
+
+// Main session coherence output
+.decl output_session_coherence(case_id: symbol, coherent: symbol, score: number)
+.output output_session_coherence
+output_session_coherence(id, "true", score) :-
+    session_coherent(id),
+    session_coherence_score(id, score).
+output_session_coherence(id, "false", score) :-
+    !session_coherent(id),
+    session_coherence_score(id, score),
+    request_id(id).
+output_session_coherence(id, "n/a", 2) :-
+    request_id(id),
+    !session_id(id, _).
+
+// All session violations found
+.decl output_session_violation(case_id: symbol, vtype: symbol, detail: symbol, severity: symbol)
+.output output_session_violation
+
+output_session_violation(id, "contradiction", msg, "error") :-
+    contradiction_detected(id, turn, ctype, old_val, new_val),
+    msg = cat("turn ", cat(to_string(turn), cat(": ", cat(ctype, cat(" was '", cat(old_val, cat("' now '", cat(new_val, "'")))))))).
+
+output_session_violation(id, "forgotten_fact", msg, "warning") :-
+    forgotten_fact(id, key, established, current),
+    msg = cat(key, cat(": established '", cat(established, cat("' but claimed '", cat(current, "'"))))).
+
+output_session_violation(id, "reasking_answered", msg, "warning") :-
+    reasking_answered(id, q, ans_turn, ans_val),
+    msg = cat("question '", cat(q, cat("' was answered in turn ", cat(to_string(ans_turn), cat(": ", ans_val))))).
+
+output_session_violation(id, "ignored_user_info", msg, "warning") :-
+    ignored_user_info(id, key, val, turn),
+    msg = cat("user stated '", cat(key, cat("=", cat(val, cat("' in turn ", to_string(turn)))))).
+
+output_session_violation(id, "progress_regression", msg, "error") :-
+    progress_regression(id, step, was, now),
+    msg = cat("step '", cat(step, cat("' regressed from ", cat(was, cat(" to ", now))))).
+
+output_session_violation(id, "forgotten_commitment", msg, "warning") :-
+    forgotten_commitment(id, commitment, turn),
+    msg = cat("commitment '", cat(commitment, cat("' from turn ", cat(to_string(turn), " not followed through")))).
+
+output_session_violation(id, "task_confusion", msg, "error") :-
+    task_confusion(id, actual, confused),
+    msg = cat("working on '", cat(confused, cat("' instead of '", cat(actual, "'")))).
+
+// Context utilization output
+.decl output_context_utilization(case_id: symbol, level: symbol)
+.output output_context_utilization
+output_context_utilization(id, level) :- context_utilization(id, level).
+
+// Session summary
+.decl output_session_summary(case_id: symbol, turn_count: number, violation_count: number, coherence_score: number)
+.output output_session_summary
+output_session_summary(id, turn, violations, score) :-
+    current_turn(id, turn),
+    session_violation_count(id, violations),
+    session_coherence_score(id, score).
+
+// Violation count output
+.decl output_violation_count(case_id: symbol, cnt: number)
+.output output_violation_count
+output_violation_count(id, c) :-
+    request_id(id),
+    c = count : { has_session_violation(id, _) }.

@@ -2,10 +2,11 @@
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from ..schemas.request import VerificationRequest
 from ..schemas.result import VerificationResult, Violation, ReasoningStep, Severity
+from ..schemas.session import Session
 from ..layers.base_layer import BaseLayer, LayerResult
 
 
@@ -91,30 +92,6 @@ class VerificationEngine:
             for n in sorted(self._layers.keys())
             if n in self.config.enabled_layers and n in self._layers
         ]
-
-    def _load_context(self, request: VerificationRequest) -> dict[str, Any]:
-        """
-        Load initial context for verification.
-
-        This can be extended to load from session store, user preferences, etc.
-
-        Args:
-            request: The verification request
-
-        Returns:
-            Initial context dict
-        """
-        context = {
-            "deployment_id": request.deployment_id,
-            "user_id": request.user_id,
-            "session_id": request.session_id,
-        }
-
-        # Additional context from request
-        if request.additional_context:
-            context.update(request.additional_context)
-
-        return context
 
     def _has_critical_violation(self, violations: list[Violation]) -> bool:
         """Check if any violation meets the fail_fast threshold."""
@@ -256,3 +233,247 @@ class VerificationEngine:
             List of verification results (same order as requests)
         """
         return [self.verify(req) for req in requests]
+
+    def set_session(self, session: Session) -> None:
+        """
+        Set session for Layer 5 (Session History).
+
+        Args:
+            session: Session object to use
+        """
+        layer5 = self.get_layer(5)
+        if layer5 and hasattr(layer5, '_sessions'):
+            from .layer5_session import SessionState
+            layer5._sessions[session.session_id] = SessionState(session=session)
+
+    def set_system_prompt(self, system_prompt: str) -> None:
+        """
+        Set system prompt for Layer 6 (Prompt Constraints).
+
+        This will be included in context for all verifications.
+
+        Args:
+            system_prompt: The system prompt text
+        """
+        self._system_prompt = system_prompt
+
+    def _load_context(self, request: VerificationRequest) -> dict[str, Any]:
+        """
+        Load initial context for verification.
+
+        Args:
+            request: The verification request
+
+        Returns:
+            Initial context dict
+        """
+        context = {
+            "deployment_id": request.deployment_id,
+            "user_id": request.user_id,
+            "session_id": request.session_id,
+        }
+
+        # Additional context from request
+        if request.additional_context:
+            context.update(request.additional_context)
+
+        # Add system prompt if set
+        if hasattr(self, '_system_prompt') and self._system_prompt:
+            context["system_prompt"] = self._system_prompt
+
+        return context
+
+
+# ============================================
+# Factory Functions
+# ============================================
+
+def create_engine(
+    layers: list[int] | None = None,
+    fail_fast: bool = False,
+    include_reasoning: bool = True,
+    **layer_configs: Any,
+) -> VerificationEngine:
+    """
+    Create a verification engine with specified layers.
+
+    Args:
+        layers: List of layer numbers to enable (default: all 6)
+        fail_fast: Stop on first critical violation
+        include_reasoning: Include reasoning in results
+        **layer_configs: Additional layer-specific configs:
+            - domains: List of domains for Layer 2
+            - strict_safety: Strict safety mode for Layer 6
+            - storage: SQLiteStore for persistence
+
+    Returns:
+        Configured VerificationEngine
+
+    Example:
+        # Create engine with all layers
+        engine = create_engine()
+
+        # Create engine with specific layers
+        engine = create_engine(layers=[1, 2, 3])
+
+        # Create engine with custom domain config
+        engine = create_engine(domains=["coding", "customer_service"])
+    """
+    from ..layers import (
+        CommonKnowledgeLayer,
+        DomainBestPracticesLayer,
+        BusinessPoliciesLayer,
+        UserPreferencesLayer,
+        SessionHistoryLayer,
+        PromptConstraintsLayer,
+    )
+
+    if layers is None:
+        layers = [1, 2, 3, 4, 5, 6]
+
+    config = EngineConfig(
+        enabled_layers=layers,
+        fail_fast=fail_fast,
+        include_reasoning=include_reasoning,
+    )
+
+    engine = VerificationEngine(config)
+
+    # Extract layer-specific configs
+    storage = layer_configs.get("storage")
+    domains = layer_configs.get("domains")
+    strict_safety = layer_configs.get("strict_safety", True)
+
+    # Register enabled layers
+    if 1 in layers:
+        engine.register_layer(CommonKnowledgeLayer())
+
+    if 2 in layers:
+        if domains:
+            engine.register_layer(DomainBestPracticesLayer(domains=domains))
+        else:
+            engine.register_layer(DomainBestPracticesLayer())
+
+    if 3 in layers:
+        engine.register_layer(BusinessPoliciesLayer(storage=storage))
+
+    if 4 in layers:
+        engine.register_layer(UserPreferencesLayer(storage=storage))
+
+    if 5 in layers:
+        engine.register_layer(SessionHistoryLayer(storage=storage))
+
+    if 6 in layers:
+        engine.register_layer(PromptConstraintsLayer(strict_safety=strict_safety))
+
+    return engine
+
+
+def create_full_engine(
+    storage: Any = None,
+    domains: list[str] | None = None,
+    fail_fast: bool = False,
+) -> VerificationEngine:
+    """
+    Create a fully-configured verification engine with all 6 layers.
+
+    Args:
+        storage: Optional SQLiteStore for persistence
+        domains: Optional list of domains for Layer 2
+        fail_fast: Stop on first critical violation
+
+    Returns:
+        VerificationEngine with all layers registered
+
+    Example:
+        engine = create_full_engine()
+        result = engine.verify(request)
+    """
+    return create_engine(
+        layers=[1, 2, 3, 4, 5, 6],
+        fail_fast=fail_fast,
+        storage=storage,
+        domains=domains,
+    )
+
+
+def create_lightweight_engine() -> VerificationEngine:
+    """
+    Create a lightweight engine with only essential layers.
+
+    Includes:
+    - Layer 1: Common Knowledge (consistency)
+    - Layer 6: Prompt Constraints (instruction following)
+
+    Returns:
+        Lightweight VerificationEngine
+    """
+    return create_engine(layers=[1, 6])
+
+
+def create_coding_engine(
+    storage: Any = None,
+    fail_fast: bool = False,
+) -> VerificationEngine:
+    """
+    Create an engine optimized for coding/development scenarios.
+
+    Includes:
+    - Layer 1: Common Knowledge
+    - Layer 2: Domain Best Practices (coding)
+    - Layer 6: Prompt Constraints
+
+    Returns:
+        Coding-focused VerificationEngine
+    """
+    return create_engine(
+        layers=[1, 2, 6],
+        fail_fast=fail_fast,
+        storage=storage,
+        domains=["coding"],
+    )
+
+
+def quick_verify(
+    prompt: str,
+    output: str,
+    system_prompt: str | None = None,
+    layers: list[int] | None = None,
+) -> VerificationResult:
+    """
+    Quick verification of a single prompt/output pair.
+
+    Args:
+        prompt: User prompt
+        output: LLM output
+        system_prompt: Optional system prompt
+        layers: Layers to check (default: [1, 6])
+
+    Returns:
+        VerificationResult
+
+    Example:
+        result = quick_verify(
+            prompt="Write hello world in Python",
+            output="print('Hello, World!')",
+        )
+        print(result.verdict)  # "pass" or "fail"
+    """
+    if layers is None:
+        layers = [1, 6]
+
+    engine = create_engine(layers=layers)
+
+    request = VerificationRequest(
+        request_id="quick_verify",
+        deployment_id="default",
+        prompt=prompt,
+        llm_output=output,
+        llm_model="unknown",
+    )
+
+    context = {}
+    if system_prompt:
+        engine._system_prompt = system_prompt
+
+    return engine.verify(request)
