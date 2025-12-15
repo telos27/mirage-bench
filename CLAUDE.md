@@ -175,3 +175,68 @@ Key files:
 - `script/verifier/fact_extractor.py` - LLM-based fact extractor
 - `script/verifier/hybrid_repetitive.dl` - Datalog scoring rules
 - `script/verifier/hybrid_verify_repetitive.py` - Main verifier class
+
+### Agent Verifier Package (General-Purpose)
+
+A standalone, general-purpose AI agent verification system with a 6-layer architecture.
+
+```
+agent_verifier/
+├── schemas/          # Data structures (Request, Result, Facts, Rules)
+├── layers/           # Verification layers (1-4 implemented)
+├── reasoning/        # Soufflé Datalog engine and rules
+├── extractors/       # Fact extraction (heuristic + LLM)
+├── rule_extraction/  # LLM-based rule extraction and compilation
+├── storage/          # SQLite persistence
+├── engine/           # Main verification orchestrator
+└── tests/            # 347 unit tests
+```
+
+**Implemented Layers:**
+| Layer | Name | Description | Datalog Rules |
+|-------|------|-------------|---------------|
+| 1 | Common Knowledge | Universal truths, consistency | `common_knowledge.dl` |
+| 2 | Domain Best Practices | Domain-specific rules (coding, CS, etc.) | `domain_coding.dl` |
+| 3 | Business Policies | Organization policies, compliance | `business_policy.dl` |
+| 4 | User Preferences | Per-user personalization | `user_preferences.dl` |
+
+**Run tests (FREE):**
+```bash
+python3 -m pytest agent_verifier/tests/ -v
+```
+
+**Example usage:**
+```python
+from agent_verifier.layers import (
+    CommonKnowledgeLayer,
+    DomainBestPracticesLayer,
+    BusinessPoliciesLayer,
+    UserPreferencesLayer,
+    create_content_policy,
+    create_developer_preferences,
+)
+from agent_verifier.schemas import VerificationRequest
+
+# Create request
+request = VerificationRequest(
+    request_id="req_001",
+    deployment_id="my-app",
+    prompt="Write a Python function",
+    llm_output="def hello(): print('Hello')",
+    llm_model="gpt-4",
+    user_id="user123",
+)
+
+# Check with Layer 3 (Business Policies)
+layer3 = BusinessPoliciesLayer()
+layer3.add_policy("my-app", create_content_policy(
+    policy_id="no_secrets",
+    forbidden_words=["password", "api_key"],
+))
+result = layer3.check(request, {})
+
+# Check with Layer 4 (User Preferences)
+layer4 = UserPreferencesLayer()
+layer4.set_preferences("user123", create_developer_preferences("user123"))
+result = layer4.check(request, {})
+```

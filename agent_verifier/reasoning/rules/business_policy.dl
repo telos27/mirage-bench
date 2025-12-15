@@ -1,0 +1,326 @@
+// Business Policy Rules (Layer 3)
+//
+// These rules enforce organization-level policies:
+// - Content constraints (forbidden words, required disclaimers)
+// - Format requirements (length limits, structure)
+// - Behavioral restrictions (no external links, no code execution)
+// - Compliance requirements (PII handling, data retention)
+//
+// Policies are loaded from storage and compiled to these patterns.
+
+// ============================================
+// Input Relations (populated by fact extractor)
+// ============================================
+
+// Request metadata
+.decl request_id(case_id: symbol)
+.input request_id
+
+// Deployment this request belongs to
+.decl deployment_id(case_id: symbol, deployment: symbol)
+.input deployment_id
+
+// Policy configuration: which policies are active for this deployment
+.decl active_policy(case_id: symbol, policy_id: symbol, policy_type: symbol, priority: number)
+.input active_policy
+
+// --- Content Facts ---
+
+// Words/phrases found in output
+.decl output_contains_word(case_id: symbol, word: symbol)
+.input output_contains_word
+
+// Output format type (e.g., "text", "code", "json", "markdown")
+.decl output_format(case_id: symbol, format: symbol)
+.input output_format
+
+// Output length (character count)
+.decl output_length(case_id: symbol, length: number)
+.input output_length
+
+// Output language (e.g., "english", "spanish")
+.decl output_language(case_id: symbol, lang: symbol)
+.input output_language
+
+// --- Policy Definition Facts ---
+
+// Forbidden words/phrases for a policy
+.decl policy_forbids_word(policy_id: symbol, word: symbol)
+.input policy_forbids_word
+
+// Required words/phrases for a policy
+.decl policy_requires_word(policy_id: symbol, word: symbol)
+.input policy_requires_word
+
+// Required format for a policy
+.decl policy_requires_format(policy_id: symbol, format: symbol)
+.input policy_requires_format
+
+// Maximum length constraint
+.decl policy_max_length(policy_id: symbol, max_len: number)
+.input policy_max_length
+
+// Minimum length constraint
+.decl policy_min_length(policy_id: symbol, min_len: number)
+.input policy_min_length
+
+// Allowed languages
+.decl policy_allowed_language(policy_id: symbol, lang: symbol)
+.input policy_allowed_language
+
+// Topic restrictions (forbidden topics)
+.decl policy_forbids_topic(policy_id: symbol, topic: symbol)
+.input policy_forbids_topic
+
+// Required disclaimers
+.decl policy_requires_disclaimer(policy_id: symbol, disclaimer_type: symbol)
+.input policy_requires_disclaimer
+
+// --- Output Content Analysis ---
+
+// Topics detected in output
+.decl output_topic(case_id: symbol, topic: symbol)
+.input output_topic
+
+// External links found
+.decl output_has_external_link(case_id: symbol, url: symbol)
+.input output_has_external_link
+
+// PII detected in output
+.decl output_has_pii(case_id: symbol, pii_type: symbol)
+.input output_has_pii
+
+// Code execution patterns
+.decl output_has_code_execution(case_id: symbol, code_type: symbol)
+.input output_has_code_execution
+
+// Disclaimer present
+.decl output_has_disclaimer(case_id: symbol, disclaimer_type: symbol)
+.input output_has_disclaimer
+
+// ============================================
+// Derived Relations - Policy Violations
+// ============================================
+
+// Check if a policy applies to this case
+.decl policy_applies(case_id: symbol, policy_id: symbol)
+policy_applies(case_id, policy_id) :-
+    active_policy(case_id, policy_id, _, _).
+
+// --- Forbidden Content Violations ---
+
+// Output contains a forbidden word
+.decl forbidden_word_violation(case_id: symbol, policy_id: symbol, word: symbol)
+forbidden_word_violation(case_id, policy_id, word) :-
+    policy_applies(case_id, policy_id),
+    policy_forbids_word(policy_id, word),
+    output_contains_word(case_id, word).
+
+// --- Required Content Violations ---
+
+// Output missing a required word
+.decl missing_required_word(case_id: symbol, policy_id: symbol, word: symbol)
+missing_required_word(case_id, policy_id, word) :-
+    policy_applies(case_id, policy_id),
+    policy_requires_word(policy_id, word),
+    !output_contains_word(case_id, word).
+
+// --- Format Violations ---
+
+// Output has wrong format
+.decl wrong_format_violation(case_id: symbol, policy_id: symbol, expected: symbol, actual: symbol)
+wrong_format_violation(case_id, policy_id, expected, actual) :-
+    policy_applies(case_id, policy_id),
+    policy_requires_format(policy_id, expected),
+    output_format(case_id, actual),
+    expected != actual.
+
+// --- Length Violations ---
+
+// Output too long
+.decl max_length_violation(case_id: symbol, policy_id: symbol, max_len: number, actual_len: number)
+max_length_violation(case_id, policy_id, max_len, actual_len) :-
+    policy_applies(case_id, policy_id),
+    policy_max_length(policy_id, max_len),
+    output_length(case_id, actual_len),
+    actual_len > max_len.
+
+// Output too short
+.decl min_length_violation(case_id: symbol, policy_id: symbol, min_len: number, actual_len: number)
+min_length_violation(case_id, policy_id, min_len, actual_len) :-
+    policy_applies(case_id, policy_id),
+    policy_min_length(policy_id, min_len),
+    output_length(case_id, actual_len),
+    actual_len < min_len.
+
+// --- Language Violations ---
+
+// Output in disallowed language
+.decl language_violation(case_id: symbol, policy_id: symbol, actual_lang: symbol)
+language_violation(case_id, policy_id, actual_lang) :-
+    policy_applies(case_id, policy_id),
+    policy_allowed_language(policy_id, _),  // Policy has language restrictions
+    output_language(case_id, actual_lang),
+    !policy_allowed_language(policy_id, actual_lang).
+
+// --- Topic Violations ---
+
+// Output discusses forbidden topic
+.decl forbidden_topic_violation(case_id: symbol, policy_id: symbol, topic: symbol)
+forbidden_topic_violation(case_id, policy_id, topic) :-
+    policy_applies(case_id, policy_id),
+    policy_forbids_topic(policy_id, topic),
+    output_topic(case_id, topic).
+
+// --- Disclaimer Violations ---
+
+// Missing required disclaimer
+.decl missing_disclaimer_violation(case_id: symbol, policy_id: symbol, disclaimer_type: symbol)
+missing_disclaimer_violation(case_id, policy_id, disclaimer_type) :-
+    policy_applies(case_id, policy_id),
+    policy_requires_disclaimer(policy_id, disclaimer_type),
+    !output_has_disclaimer(case_id, disclaimer_type).
+
+// --- General Behavior Violations ---
+
+// External link when not allowed
+.decl external_link_violation(case_id: symbol, policy_id: symbol, url: symbol)
+.decl policy_forbids_external_links(policy_id: symbol)
+.input policy_forbids_external_links
+external_link_violation(case_id, policy_id, url) :-
+    policy_applies(case_id, policy_id),
+    policy_forbids_external_links(policy_id),
+    output_has_external_link(case_id, url).
+
+// PII when not allowed
+.decl pii_violation(case_id: symbol, policy_id: symbol, pii_type: symbol)
+.decl policy_forbids_pii(policy_id: symbol)
+.input policy_forbids_pii
+pii_violation(case_id, policy_id, pii_type) :-
+    policy_applies(case_id, policy_id),
+    policy_forbids_pii(policy_id),
+    output_has_pii(case_id, pii_type).
+
+// Code execution when not allowed
+.decl code_execution_violation(case_id: symbol, policy_id: symbol, code_type: symbol)
+.decl policy_forbids_code_execution(policy_id: symbol)
+.input policy_forbids_code_execution
+code_execution_violation(case_id, policy_id, code_type) :-
+    policy_applies(case_id, policy_id),
+    policy_forbids_code_execution(policy_id),
+    output_has_code_execution(case_id, code_type).
+
+// ============================================
+// Violation Aggregation
+// ============================================
+
+.decl has_policy_violation(case_id: symbol, vtype: symbol, policy_id: symbol)
+has_policy_violation(case_id, "forbidden_word", policy_id) :- forbidden_word_violation(case_id, policy_id, _).
+has_policy_violation(case_id, "missing_required_word", policy_id) :- missing_required_word(case_id, policy_id, _).
+has_policy_violation(case_id, "wrong_format", policy_id) :- wrong_format_violation(case_id, policy_id, _, _).
+has_policy_violation(case_id, "max_length_exceeded", policy_id) :- max_length_violation(case_id, policy_id, _, _).
+has_policy_violation(case_id, "min_length_not_met", policy_id) :- min_length_violation(case_id, policy_id, _, _).
+has_policy_violation(case_id, "language_not_allowed", policy_id) :- language_violation(case_id, policy_id, _).
+has_policy_violation(case_id, "forbidden_topic", policy_id) :- forbidden_topic_violation(case_id, policy_id, _).
+has_policy_violation(case_id, "missing_disclaimer", policy_id) :- missing_disclaimer_violation(case_id, policy_id, _).
+has_policy_violation(case_id, "external_link_forbidden", policy_id) :- external_link_violation(case_id, policy_id, _).
+has_policy_violation(case_id, "pii_forbidden", policy_id) :- pii_violation(case_id, policy_id, _).
+has_policy_violation(case_id, "code_execution_forbidden", policy_id) :- code_execution_violation(case_id, policy_id, _).
+
+// Count violations per policy
+.decl policy_violation_count(case_id: symbol, policy_id: symbol, cnt: number)
+policy_violation_count(case_id, policy_id, c) :-
+    policy_applies(case_id, policy_id),
+    c = count : { has_policy_violation(case_id, _, policy_id) }.
+
+// Total violation count
+.decl total_policy_violation_count(case_id: symbol, cnt: number)
+total_policy_violation_count(case_id, c) :-
+    request_id(case_id),
+    c = count : { has_policy_violation(case_id, _, _) }.
+
+// ============================================
+// Compliance Assessment
+// ============================================
+
+// Check if a specific policy is satisfied
+.decl policy_satisfied(case_id: symbol, policy_id: symbol)
+policy_satisfied(case_id, policy_id) :-
+    policy_applies(case_id, policy_id),
+    !has_policy_violation(case_id, _, policy_id).
+
+// Overall compliance: all policies satisfied
+.decl is_compliant(case_id: symbol)
+is_compliant(case_id) :-
+    request_id(case_id),
+    !has_policy_violation(case_id, _, _).
+
+// Compliance score:
+// 2 = fully compliant
+// 1 = minor issues (1-2 violations)
+// 0 = major issues (3+ violations)
+.decl compliance_score(case_id: symbol, score: number)
+compliance_score(case_id, 2) :- is_compliant(case_id).
+compliance_score(case_id, 1) :- total_policy_violation_count(case_id, c), c >= 1, c <= 2.
+compliance_score(case_id, 0) :- total_policy_violation_count(case_id, c), c >= 3.
+
+// ============================================
+// Output Relations
+// ============================================
+
+// Main compliance output
+.decl output_compliance(case_id: symbol, compliant: symbol, score: number)
+.output output_compliance
+output_compliance(case_id, "true", score) :- is_compliant(case_id), compliance_score(case_id, score).
+output_compliance(case_id, "false", score) :- !is_compliant(case_id), compliance_score(case_id, score), request_id(case_id).
+
+// All policy violations found
+.decl output_policy_violation(case_id: symbol, policy_id: symbol, vtype: symbol, detail: symbol, severity: symbol)
+.output output_policy_violation
+
+output_policy_violation(case_id, policy_id, "forbidden_word", word, "error") :-
+    forbidden_word_violation(case_id, policy_id, word).
+
+output_policy_violation(case_id, policy_id, "missing_required_word", word, "warning") :-
+    missing_required_word(case_id, policy_id, word).
+
+output_policy_violation(case_id, policy_id, "wrong_format", msg, "warning") :-
+    wrong_format_violation(case_id, policy_id, expected, actual),
+    msg = cat("expected ", cat(expected, cat(" got ", actual))).
+
+output_policy_violation(case_id, policy_id, "max_length_exceeded", msg, "warning") :-
+    max_length_violation(case_id, policy_id, max_len, actual_len),
+    msg = cat("max ", cat(to_string(max_len), cat(" actual ", to_string(actual_len)))).
+
+output_policy_violation(case_id, policy_id, "min_length_not_met", msg, "warning") :-
+    min_length_violation(case_id, policy_id, min_len, actual_len),
+    msg = cat("min ", cat(to_string(min_len), cat(" actual ", to_string(actual_len)))).
+
+output_policy_violation(case_id, policy_id, "language_not_allowed", lang, "warning") :-
+    language_violation(case_id, policy_id, lang).
+
+output_policy_violation(case_id, policy_id, "forbidden_topic", topic, "error") :-
+    forbidden_topic_violation(case_id, policy_id, topic).
+
+output_policy_violation(case_id, policy_id, "missing_disclaimer", dtype, "warning") :-
+    missing_disclaimer_violation(case_id, policy_id, dtype).
+
+output_policy_violation(case_id, policy_id, "external_link_forbidden", url, "warning") :-
+    external_link_violation(case_id, policy_id, url).
+
+output_policy_violation(case_id, policy_id, "pii_forbidden", pii_type, "error") :-
+    pii_violation(case_id, policy_id, pii_type).
+
+output_policy_violation(case_id, policy_id, "code_execution_forbidden", code_type, "error") :-
+    code_execution_violation(case_id, policy_id, code_type).
+
+// Policy status summary
+.decl output_policy_status(case_id: symbol, policy_id: symbol, status: symbol, violation_count: number)
+.output output_policy_status
+output_policy_status(case_id, policy_id, "satisfied", 0) :- policy_satisfied(case_id, policy_id).
+output_policy_status(case_id, policy_id, "violated", c) :- policy_violation_count(case_id, policy_id, c), c > 0.
+
+// Total violation count summary
+.decl output_violation_count(case_id: symbol, cnt: number)
+.output output_violation_count
+output_violation_count(case_id, c) :- total_policy_violation_count(case_id, c).

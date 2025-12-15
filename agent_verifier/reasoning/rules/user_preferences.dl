@@ -1,0 +1,325 @@
+// User Preferences Rules (Layer 4)
+//
+// These rules enforce per-user preferences:
+// - Response style (concise, detailed, technical, simple)
+// - Format preferences (bullet points, prose, code examples)
+// - Length preferences (short, medium, long)
+// - Tone preferences (formal, casual, friendly)
+// - Topic preferences (interested, avoid)
+// - Language/locale preferences
+//
+// Preferences can be explicit (user-set) or inferred (from behavior).
+
+// ============================================
+// Input Relations (populated by fact extractor)
+// ============================================
+
+// Request metadata
+.decl request_id(case_id: symbol)
+.input request_id
+
+// User identifier for this request
+.decl user_id(case_id: symbol, user: symbol)
+.input user_id
+
+// Deployment context
+.decl deployment_id(case_id: symbol, deployment: symbol)
+.input deployment_id
+
+// --- User Preference Facts ---
+
+// Active preference for user
+// preference_type: "explicit" (user-set) or "inferred" (from behavior)
+// confidence: 0-100 (100 for explicit, lower for inferred)
+.decl user_preference(case_id: symbol, user: symbol, pref_key: symbol, pref_value: symbol, pref_type: symbol, confidence: number)
+.input user_preference
+
+// Specific preference types (derived from user_preference for convenience)
+
+// Response style: "concise", "detailed", "technical", "simple", "balanced"
+.decl pref_response_style(case_id: symbol, user: symbol, style: symbol)
+.input pref_response_style
+
+// Response length: "short", "medium", "long"
+.decl pref_response_length(case_id: symbol, user: symbol, length: symbol)
+.input pref_response_length
+
+// Response format: "prose", "bullets", "numbered", "code_heavy", "mixed"
+.decl pref_response_format(case_id: symbol, user: symbol, format: symbol)
+.input pref_response_format
+
+// Tone: "formal", "casual", "friendly", "professional", "neutral"
+.decl pref_tone(case_id: symbol, user: symbol, tone: symbol)
+.input pref_tone
+
+// Language preference
+.decl pref_language(case_id: symbol, user: symbol, lang: symbol)
+.input pref_language
+
+// Topics user is interested in
+.decl pref_interested_topic(case_id: symbol, user: symbol, topic: symbol)
+.input pref_interested_topic
+
+// Topics user wants to avoid
+.decl pref_avoid_topic(case_id: symbol, user: symbol, topic: symbol)
+.input pref_avoid_topic
+
+// Expertise level: "beginner", "intermediate", "expert"
+.decl pref_expertise_level(case_id: symbol, user: symbol, level: symbol)
+.input pref_expertise_level
+
+// Code language preferences (for coding contexts)
+.decl pref_code_language(case_id: symbol, user: symbol, lang: symbol)
+.input pref_code_language
+
+// --- Output Analysis Facts ---
+
+// Detected response style in output
+.decl output_response_style(case_id: symbol, style: symbol)
+.input output_response_style
+
+// Detected response length category
+.decl output_length_category(case_id: symbol, category: symbol)
+.input output_length_category
+
+// Detected response format
+.decl output_format_type(case_id: symbol, format: symbol)
+.input output_format_type
+
+// Detected tone in output
+.decl output_tone(case_id: symbol, tone: symbol)
+.input output_tone
+
+// Detected language of output
+.decl output_language(case_id: symbol, lang: symbol)
+.input output_language
+
+// Topics discussed in output
+.decl output_topic(case_id: symbol, topic: symbol)
+.input output_topic
+
+// Detected expertise level of response
+.decl output_expertise_level(case_id: symbol, level: symbol)
+.input output_expertise_level
+
+// Code language used in output
+.decl output_code_language(case_id: symbol, lang: symbol)
+.input output_code_language
+
+// ============================================
+// Derived Relations - Preference Matching
+// ============================================
+
+// Check if user has any preferences set
+.decl has_preferences(case_id: symbol, user: symbol)
+has_preferences(case_id, user) :- user_preference(case_id, user, _, _, _, _).
+has_preferences(case_id, user) :- pref_response_style(case_id, user, _).
+has_preferences(case_id, user) :- pref_response_length(case_id, user, _).
+has_preferences(case_id, user) :- pref_response_format(case_id, user, _).
+has_preferences(case_id, user) :- pref_tone(case_id, user, _).
+has_preferences(case_id, user) :- pref_language(case_id, user, _).
+has_preferences(case_id, user) :- pref_expertise_level(case_id, user, _).
+
+// ============================================
+// Preference Violations
+// ============================================
+
+// Style mismatch: output style doesn't match preference
+.decl style_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+style_mismatch(case_id, user, preferred, actual) :-
+    pref_response_style(case_id, user, preferred),
+    output_response_style(case_id, actual),
+    preferred != actual.
+
+// Length mismatch: output length doesn't match preference
+.decl length_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+length_mismatch(case_id, user, preferred, actual) :-
+    pref_response_length(case_id, user, preferred),
+    output_length_category(case_id, actual),
+    preferred != actual.
+
+// Format mismatch: output format doesn't match preference
+.decl format_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+format_mismatch(case_id, user, preferred, actual) :-
+    pref_response_format(case_id, user, preferred),
+    output_format_type(case_id, actual),
+    preferred != actual.
+
+// Tone mismatch: output tone doesn't match preference
+.decl tone_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+tone_mismatch(case_id, user, preferred, actual) :-
+    pref_tone(case_id, user, preferred),
+    output_tone(case_id, actual),
+    preferred != actual.
+
+// Language mismatch: output language doesn't match preference
+.decl language_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+language_mismatch(case_id, user, preferred, actual) :-
+    pref_language(case_id, user, preferred),
+    output_language(case_id, actual),
+    preferred != actual.
+
+// Expertise level mismatch
+.decl expertise_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+expertise_mismatch(case_id, user, preferred, actual) :-
+    pref_expertise_level(case_id, user, preferred),
+    output_expertise_level(case_id, actual),
+    preferred != actual.
+
+// Avoided topic mentioned
+.decl avoided_topic_mentioned(case_id: symbol, user: symbol, topic: symbol)
+avoided_topic_mentioned(case_id, user, topic) :-
+    pref_avoid_topic(case_id, user, topic),
+    output_topic(case_id, topic).
+
+// Code language mismatch (when user prefers specific language)
+.decl code_language_mismatch(case_id: symbol, user: symbol, preferred: symbol, actual: symbol)
+code_language_mismatch(case_id, user, preferred, actual) :-
+    pref_code_language(case_id, user, preferred),
+    output_code_language(case_id, actual),
+    preferred != actual,
+    preferred != "any".
+
+// ============================================
+// Preference Satisfaction (positive matches)
+// ============================================
+
+// Style matches preference
+.decl style_satisfied(case_id: symbol, user: symbol)
+style_satisfied(case_id, user) :-
+    pref_response_style(case_id, user, style),
+    output_response_style(case_id, style).
+
+// Length matches preference
+.decl length_satisfied(case_id: symbol, user: symbol)
+length_satisfied(case_id, user) :-
+    pref_response_length(case_id, user, len),
+    output_length_category(case_id, len).
+
+// Format matches preference
+.decl format_satisfied(case_id: symbol, user: symbol)
+format_satisfied(case_id, user) :-
+    pref_response_format(case_id, user, fmt),
+    output_format_type(case_id, fmt).
+
+// Tone matches preference
+.decl tone_satisfied(case_id: symbol, user: symbol)
+tone_satisfied(case_id, user) :-
+    pref_tone(case_id, user, tone),
+    output_tone(case_id, tone).
+
+// No avoided topics mentioned
+.decl avoided_topics_respected(case_id: symbol, user: symbol)
+avoided_topics_respected(case_id, user) :-
+    user_id(case_id, user),
+    !avoided_topic_mentioned(case_id, user, _).
+
+// ============================================
+// Violation Aggregation
+// ============================================
+
+.decl has_preference_violation(case_id: symbol, vtype: symbol, user: symbol)
+has_preference_violation(case_id, "style_mismatch", user) :- style_mismatch(case_id, user, _, _).
+has_preference_violation(case_id, "length_mismatch", user) :- length_mismatch(case_id, user, _, _).
+has_preference_violation(case_id, "format_mismatch", user) :- format_mismatch(case_id, user, _, _).
+has_preference_violation(case_id, "tone_mismatch", user) :- tone_mismatch(case_id, user, _, _).
+has_preference_violation(case_id, "language_mismatch", user) :- language_mismatch(case_id, user, _, _).
+has_preference_violation(case_id, "expertise_mismatch", user) :- expertise_mismatch(case_id, user, _, _).
+has_preference_violation(case_id, "avoided_topic_mentioned", user) :- avoided_topic_mentioned(case_id, user, _).
+has_preference_violation(case_id, "code_language_mismatch", user) :- code_language_mismatch(case_id, user, _, _).
+
+// Count of preference violations
+.decl preference_violation_count(case_id: symbol, user: symbol, cnt: number)
+preference_violation_count(case_id, user, c) :-
+    user_id(case_id, user),
+    c = count : { has_preference_violation(case_id, _, user) }.
+
+// ============================================
+// Preference Alignment Score
+// ============================================
+
+// Overall preference alignment
+// 2 = fully aligned (no mismatches)
+// 1 = partially aligned (1-2 mismatches)
+// 0 = poorly aligned (3+ mismatches)
+.decl preference_alignment_score(case_id: symbol, user: symbol, score: number)
+preference_alignment_score(case_id, user, 2) :-
+    user_id(case_id, user),
+    preference_violation_count(case_id, user, 0).
+preference_alignment_score(case_id, user, 1) :-
+    preference_violation_count(case_id, user, c),
+    c >= 1, c <= 2.
+preference_alignment_score(case_id, user, 0) :-
+    preference_violation_count(case_id, user, c),
+    c >= 3.
+
+// Preferences fully satisfied
+.decl preferences_satisfied(case_id: symbol, user: symbol)
+preferences_satisfied(case_id, user) :-
+    user_id(case_id, user),
+    preference_violation_count(case_id, user, 0).
+
+// ============================================
+// Output Relations
+// ============================================
+
+// Main preference alignment output
+.decl output_preference_alignment(case_id: symbol, user: symbol, aligned: symbol, score: number)
+.output output_preference_alignment
+output_preference_alignment(case_id, user, "true", score) :-
+    preferences_satisfied(case_id, user),
+    preference_alignment_score(case_id, user, score).
+output_preference_alignment(case_id, user, "false", score) :-
+    !preferences_satisfied(case_id, user),
+    preference_alignment_score(case_id, user, score),
+    user_id(case_id, user).
+
+// All preference violations found
+.decl output_preference_violation(case_id: symbol, user: symbol, vtype: symbol, detail: symbol, severity: symbol)
+.output output_preference_violation
+
+output_preference_violation(case_id, user, "style_mismatch", msg, "info") :-
+    style_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+output_preference_violation(case_id, user, "length_mismatch", msg, "info") :-
+    length_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+output_preference_violation(case_id, user, "format_mismatch", msg, "info") :-
+    format_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+output_preference_violation(case_id, user, "tone_mismatch", msg, "info") :-
+    tone_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+output_preference_violation(case_id, user, "language_mismatch", msg, "warning") :-
+    language_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+output_preference_violation(case_id, user, "expertise_mismatch", msg, "info") :-
+    expertise_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+output_preference_violation(case_id, user, "avoided_topic_mentioned", topic, "warning") :-
+    avoided_topic_mentioned(case_id, user, topic).
+
+output_preference_violation(case_id, user, "code_language_mismatch", msg, "info") :-
+    code_language_mismatch(case_id, user, preferred, actual),
+    msg = cat("preferred ", cat(preferred, cat(" got ", actual))).
+
+// Preference satisfaction summary
+.decl output_preference_summary(case_id: symbol, user: symbol, total_prefs: number, violations: number)
+.output output_preference_summary
+output_preference_summary(case_id, user, total, v) :-
+    user_id(case_id, user),
+    preference_violation_count(case_id, user, v),
+    total = count : { user_preference(case_id, user, _, _, _, _) }.
+
+// Violation count output
+.decl output_violation_count(case_id: symbol, cnt: number)
+.output output_violation_count
+output_violation_count(case_id, c) :-
+    request_id(case_id),
+    c = count : { has_preference_violation(case_id, _, _) }.
